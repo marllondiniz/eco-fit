@@ -9,6 +9,22 @@ export function getLocalDateString(date: Date = new Date()): string {
   return `${y}-${m}-${d}`
 }
 
+/** Segunda-feira da semana atual (fuso local). */
+export function getLocalWeekStart(): string {
+  const now = new Date()
+  const day = now.getDay()
+  const diff = day === 0 ? -6 : 1 - day
+  const mon = new Date(now)
+  mon.setDate(now.getDate() + diff)
+  return getLocalDateString(mon)
+}
+
+/** Primeiro dia do mês atual (fuso local). */
+export function getLocalMonthStart(): string {
+  const now = new Date()
+  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+}
+
 export function formatDistanceToNow(dateString: string): string {
   const date = new Date(dateString)
   const now = new Date()

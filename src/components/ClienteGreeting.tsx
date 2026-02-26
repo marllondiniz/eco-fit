@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { supabase } from '@/lib/supabase'
+import { getLocalDateString } from '@/lib/date-utils'
 
 function getGreeting() {
   const h = new Date().getHours()
@@ -18,13 +20,13 @@ function getMotivation(streak: number, hasActivityToday: boolean) {
 
 interface ClienteGreetingProps {
   firstName: string
-  streak: number
-  hasActivityToday: boolean
 }
 
-export function ClienteGreeting({ firstName, streak, hasActivityToday }: ClienteGreetingProps) {
+export function ClienteGreeting({ firstName }: ClienteGreetingProps) {
   const [greeting, setGreeting] = useState('Boa noite')
   const [mounted, setMounted] = useState(false)
+  const [streak, setStreak] = useState(0)
+  const [hasActivityToday, setHasActivityToday] = useState(false)
 
   useEffect(() => {
     setMounted(true)
@@ -32,6 +34,22 @@ export function ClienteGreeting({ firstName, streak, hasActivityToday }: Cliente
 
   useEffect(() => {
     if (mounted) setGreeting(getGreeting())
+  }, [mounted])
+
+  useEffect(() => {
+    if (!mounted) return
+    async function load() {
+      const { data: { user } } = await supabase.auth.getUser()
+      if (!user) return
+      const today = getLocalDateString()
+      const [{ data: gami }, { data: sessions }] = await Promise.all([
+        supabase.from('user_gamification').select('streak_days').eq('user_id', user.id).maybeSingle(),
+        supabase.from('workout_sessions').select('id').eq('user_id', user.id).eq('date', today),
+      ])
+      setStreak(gami?.streak_days ?? 0)
+      setHasActivityToday((sessions?.length ?? 0) > 0)
+    }
+    load()
   }, [mounted])
 
   const motivation = getMotivation(streak, hasActivityToday)
