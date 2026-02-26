@@ -1,6 +1,8 @@
 'use client'
 
 import dynamic from 'next/dynamic'
+import Image from 'next/image'
+import Link from 'next/link'
 import type { ReactNode } from 'react'
 
 const ThemeToggle = dynamic(
@@ -29,10 +31,31 @@ export default function AuthLayout({ titulo, subtitulo, children }: AuthLayoutPr
       <div className="w-full max-w-md relative z-10">
         <div className="bg-card/95 backdrop-blur-sm rounded-2xl shadow-2xl shadow-black/20 dark:shadow-black/40 p-6 sm:p-8 md:p-10 border border-border">
           <div className="text-center mb-8">
-            <h1 className="text-3xl font-bold text-primary tracking-tight">
-              ECOFIT
-            </h1>
-            <h2 className="text-lg font-semibold text-foreground mt-2">{titulo}</h2>
+            <Link
+              href="/"
+              className="inline-flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
+              aria-label="ECOFIT - Ir para login"
+            >
+              <span className="relative block h-10 w-[130px]">
+                <Image
+                  src="/logo-preto.png"
+                  alt="ECOFIT"
+                  fill
+                  className="object-contain object-center dark:hidden"
+                  sizes="130px"
+                  priority
+                />
+                <Image
+                  src="/logo-branco.png"
+                  alt="ECOFIT"
+                  fill
+                  className="object-contain object-center hidden dark:block"
+                  sizes="130px"
+                  priority
+                />
+              </span>
+            </Link>
+            <h2 className="text-lg font-semibold text-foreground mt-4">{titulo}</h2>
             {subtitulo && (
               <p className="text-muted-foreground dark:text-foreground/90 mt-1 text-sm">{subtitulo}</p>
             )}
