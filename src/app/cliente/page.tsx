@@ -2,18 +2,12 @@ import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { getProfile } from '@/lib/supabase-server'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { ClienteGreeting } from '@/components/ClienteGreeting'
 import { Utensils, Dumbbell, ArrowRight, Flame, Trophy, TrendingUp, Target, Zap, CheckCircle2 } from 'lucide-react'
 import Link from 'next/link'
 import { formatDate } from '@/lib/date-utils'
 
 export const metadata = { title: 'ECOFIT — Início' }
-
-function getGreeting() {
-  const h = new Date().getHours()
-  if (h < 12) return 'Bom dia'
-  if (h < 18) return 'Boa tarde'
-  return 'Boa noite'
-}
 
 function getFirstName(fullName: string | null) {
   if (!fullName) return 'Atleta'
@@ -100,24 +94,15 @@ export default async function ClientePage() {
   const level = gamification?.level ?? 1
 
   const firstName = getFirstName(profile?.full_name ?? null)
-  const greeting = getGreeting()
-
-  // Motivational message based on streak
-  function getMotivation() {
-    if (streak >= 7) return 'Você está imparável! ' + streak + ' dias seguidos!'
-    if (streak >= 3) return `${streak} dias seguidos — continue assim!`
-    if (hasActivityToday) return 'Ótimo trabalho hoje! Continue evoluindo.'
-    return 'Vamos continuar sua evolução hoje?'
-  }
 
   return (
     <div className="space-y-8">
-      {/* Saudação personalizada */}
-      <div>
-        <p className="text-sm text-muted-foreground font-medium">{greeting},</p>
-        <h2 className="text-2xl font-bold text-foreground">{firstName}</h2>
-        <p className="text-muted-foreground mt-1 text-sm">{getMotivation()}</p>
-      </div>
+      {/* Saudação: horário do navegador do usuário (evita "Bom dia" à noite em produção) */}
+      <ClienteGreeting
+        firstName={firstName}
+        streak={streak}
+        hasActivityToday={hasActivityToday}
+      />
 
       {/* Bloco de progresso motivador */}
       {(gamification || hasActivityToday) && (
