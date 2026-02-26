@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { getLocalDateString } from '@/lib/date-utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -35,7 +36,7 @@ function getLastNDays(n: number): string[] {
   return Array.from({ length: n }, (_, i) => {
     const d = new Date()
     d.setDate(d.getDate() - (n - 1 - i))
-    return d.toISOString().split('T')[0]
+    return getLocalDateString(d)
   })
 }
 
@@ -43,7 +44,7 @@ function getMonthDays(year: number, month: number): string[] {
   const days: string[] = []
   const d = new Date(year, month, 1)
   while (d.getMonth() === month) {
-    days.push(d.toISOString().split('T')[0])
+    days.push(getLocalDateString(d))
     d.setDate(d.getDate() + 1)
   }
   return days
@@ -253,7 +254,7 @@ export default function ProgressoPage() {
                   const hasActivity = daySessions.length > 0
                   const isComplete = daySessions.some(s => s.is_complete)
                   const d = new Date(date + 'T12:00:00')
-                  const isToday = date === new Date().toISOString().split('T')[0]
+                  const isToday = date === getLocalDateString()
                   return (
                     <div key={date} className="flex-1 flex flex-col items-center gap-1">
                       <div className="w-full flex items-end justify-center" style={{ height: 56 }}>
@@ -343,8 +344,8 @@ export default function ProgressoPage() {
                     const daySessions = sessionByDate.get(date) ?? []
                     const isComplete = daySessions.some(s => s.is_complete)
                     const hasActivity = daySessions.length > 0
-                    const isToday = date === new Date().toISOString().split('T')[0]
-                    const isFuture = date > new Date().toISOString().split('T')[0]
+                    const isToday = date === getLocalDateString()
+                    const isFuture = date > getLocalDateString()
                     const dayNum = parseInt(date.split('-')[2])
                     return (
                       <div

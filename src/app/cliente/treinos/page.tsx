@@ -5,7 +5,7 @@ import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Dumbbell, Timer, CheckCircle2, Circle, Flame, Star, Trophy, Zap } from 'lucide-react'
-import { formatDate } from '@/lib/date-utils'
+import { formatDate, getLocalDateString } from '@/lib/date-utils'
 
 // XP constants
 const XP_PER_EXERCISE = 10
@@ -54,7 +54,7 @@ export default function ClienteTreinosPage() {
   const [loading, setLoading] = useState(true)
   const [savingExercise, setSavingExercise] = useState<string | null>(null)
 
-  const today = new Date().toISOString().split('T')[0]
+  const today = getLocalDateString()
 
   const loadData = useCallback(async () => {
     const { data: { user } } = await supabase.auth.getUser()
@@ -144,7 +144,7 @@ export default function ClienteTreinosPage() {
     const lastDate = existing?.last_workout_date
     const yesterday = new Date()
     yesterday.setDate(yesterday.getDate() - 1)
-    const yesterdayStr = yesterday.toISOString().split('T')[0]
+    const yesterdayStr = getLocalDateString(yesterday)
 
     const newStreak = lastDate === yesterdayStr || lastDate === today
       ? (existing?.streak_days ?? 0) + 1

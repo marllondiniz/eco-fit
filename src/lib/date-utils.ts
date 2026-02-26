@@ -1,3 +1,14 @@
+/**
+ * Retorna a data de hoje no fuso do usuário no formato YYYY-MM-DD.
+ * Evita usar UTC (toISOString), que em produção faz o dia "adiantar" à noite.
+ */
+export function getLocalDateString(date: Date = new Date()): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
 export function formatDistanceToNow(dateString: string): string {
   const date = new Date(dateString)
   const now = new Date()
