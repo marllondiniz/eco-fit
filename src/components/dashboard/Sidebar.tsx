@@ -100,7 +100,7 @@ export function Sidebar({ role, onClose }: SidebarProps) {
           <span className="relative block h-8 w-[100px]">
             <Image
               src="/logo-preto.png"
-              alt="ECOFIT"
+              alt="LB.FIT"
               fill
               className="object-contain object-left dark:hidden"
               sizes="100px"
@@ -108,7 +108,7 @@ export function Sidebar({ role, onClose }: SidebarProps) {
             />
             <Image
               src="/logo-branco.png"
-              alt="ECOFIT"
+              alt="LB.FIT"
               fill
               className="object-contain object-left hidden dark:block"
               sizes="100px"
@@ -153,7 +153,7 @@ export function Sidebar({ role, onClose }: SidebarProps) {
 
       {/* Footer */}
       <div className="px-6 py-4 border-t border-border">
-        <p className="text-xs text-muted-foreground">© ECOFIT 2025</p>
+        <p className="text-xs text-muted-foreground">© LB.FIT 2025</p>
       </div>
     </aside>
   )

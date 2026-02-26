@@ -5,7 +5,7 @@ import { Users, Utensils, Dumbbell, ClipboardCheck } from 'lucide-react'
 import Link from 'next/link'
 import { formatDistanceToNow } from '@/lib/date-utils'
 
-export const metadata = { title: 'ECOFIT — Visão Geral' }
+export const metadata = { title: 'LB.FIT — Visão Geral' }
 
 export default async function ProfissionalPage() {
   const supabase = await createSupabaseServerClient()

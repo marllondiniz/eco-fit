@@ -3,7 +3,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Users, UserCheck, Utensils, Dumbbell } from 'lucide-react'
 import Link from 'next/link'
 
-export const metadata = { title: 'ECOFIT — Admin' }
+export const metadata = { title: 'LB.FIT — Admin' }
 
 export default async function AdminPage() {
   const supabase = await createSupabaseServerClient()
@@ -34,7 +34,7 @@ export default async function AdminPage() {
       <div>
         <h2 className="text-2xl font-bold text-foreground">Painel Admin</h2>
         <p className="text-muted-foreground mt-1 text-sm">
-          Visão geral da plataforma ECOFIT.
+          Visão geral da plataforma LB.FIT.
           {(convitesPendentes ?? 0) > 0 && (
             <span className="ml-2 text-amber-600 dark:text-amber-400 font-medium">
               {convitesPendentes} {convitesPendentes === 1 ? 'convite pendente' : 'convites pendentes'}

@@ -77,7 +77,7 @@ export function Header({ name, email, role, avatarUrl, pageTitle }: HeaderProps)
             <span className="relative block h-8 w-[100px]">
               <Image
                 src="/logo-preto.png"
-                alt="ECOFIT"
+                alt="LB.FIT"
                 fill
                 className="object-contain object-left dark:hidden"
                 sizes="100px"
@@ -85,7 +85,7 @@ export function Header({ name, email, role, avatarUrl, pageTitle }: HeaderProps)
               />
               <Image
                 src="/logo-branco.png"
-                alt="ECOFIT"
+                alt="LB.FIT"
                 fill
                 className="object-contain object-left hidden dark:block"
                 sizes="100px"

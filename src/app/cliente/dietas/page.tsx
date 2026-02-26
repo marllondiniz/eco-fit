@@ -5,7 +5,7 @@ import { Utensils, Clock, Clock3 } from 'lucide-react'
 import { formatDate } from '@/lib/date-utils'
 import { SolicitarDietaButton } from '@/components/SolicitarDietaButton'
 
-export const metadata = { title: 'ECOFIT — Minhas Dietas' }
+export const metadata = { title: 'LB.FIT — Minhas Dietas' }
 
 export default async function ClienteDietasPage() {
   const supabase = await createSupabaseServerClient()

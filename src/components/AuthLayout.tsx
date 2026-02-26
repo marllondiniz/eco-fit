@@ -34,12 +34,12 @@ export default function AuthLayout({ titulo, subtitulo, children }: AuthLayoutPr
             <Link
               href="/"
               className="inline-flex items-center justify-center focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 rounded"
-              aria-label="ECOFIT - Ir para login"
+              aria-label="LB.FIT - Ir para login"
             >
               <span className="relative block h-10 w-[130px]">
                 <Image
                   src="/logo-preto.png"
-                  alt="ECOFIT"
+                  alt="LB.FIT"
                   fill
                   className="object-contain object-center dark:hidden"
                   sizes="130px"
@@ -47,7 +47,7 @@ export default function AuthLayout({ titulo, subtitulo, children }: AuthLayoutPr
                 />
                 <Image
                   src="/logo-branco.png"
-                  alt="ECOFIT"
+                  alt="LB.FIT"
                   fill
                   className="object-contain object-center hidden dark:block"
                   sizes="130px"
@@ -63,7 +63,7 @@ export default function AuthLayout({ titulo, subtitulo, children }: AuthLayoutPr
           {children}
         </div>
         <p className="text-center text-white/60 dark:text-white/50 text-xs mt-6">
-          © ECOFIT — Saúde e sustentabilidade
+          © LB.FIT — Saúde e sustentabilidade
         </p>
       </div>
     </div>

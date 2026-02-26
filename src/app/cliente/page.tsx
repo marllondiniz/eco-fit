@@ -3,7 +3,7 @@ import { getProfile } from '@/lib/supabase-server'
 import { ClienteGreeting } from '@/components/ClienteGreeting'
 import { ClienteEvolucaoBlock } from '@/components/ClienteEvolucaoBlock'
 
-export const metadata = { title: 'ECOFIT — Início' }
+export const metadata = { title: 'LB.FIT — Início' }
 
 function getFirstName(fullName: string | null) {
   if (!fullName) return 'Atleta'

@@ -124,7 +124,7 @@ function CriarContaForm() {
     )
   }
 
-  // Sem token → acesso direto bloqueado
+  // Sem token → mostra página de acesso restrito
   if (!token) {
     return (
       <AuthLayout titulo="Acesso restrito" subtitulo="O cadastro é exclusivo via convite.">

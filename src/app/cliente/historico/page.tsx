@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Utensils, Dumbbell, History } from 'lucide-react'
 import { formatDate, formatDistanceToNow } from '@/lib/date-utils'
 
-export const metadata = { title: 'ECOFIT — Histórico' }
+export const metadata = { title: 'LB.FIT — Histórico' }
 
 export default async function HistoricoPage() {
   const supabase = await createSupabaseServerClient()

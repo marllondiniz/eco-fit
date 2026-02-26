@@ -4,7 +4,7 @@ import { Badge } from '@/components/ui/badge'
 import { Users, UserCheck, Settings2, Mail, Link2Icon } from 'lucide-react'
 import Link from 'next/link'
 
-export const metadata = { title: 'ECOFIT — Configurações' }
+export const metadata = { title: 'LB.FIT — Configurações' }
 
 export default async function ConfiguracoesPage() {
   const supabase = await createSupabaseServerClient()
@@ -25,7 +25,7 @@ export default async function ConfiguracoesPage() {
         <div>
           <h2 className="text-2xl font-bold text-foreground">Configurações</h2>
           <p className="text-muted-foreground mt-1 text-sm">
-            Central de ajustes do EcoFit — usuários, permissões e integrações.
+            Central de ajustes do LB.FIT — usuários, permissões e integrações.
           </p>
         </div>
       </div>
@@ -103,7 +103,7 @@ export default async function ConfiguracoesPage() {
         </CardHeader>
         <CardContent className="space-y-4 text-sm text-muted-foreground">
           <p>
-            Aqui você poderá centralizar configurações de serviços externos usados pelo EcoFit.
+            Aqui você poderá centralizar configurações de serviços externos usados pelo LB.FIT.
           </p>
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="border border-dashed border-border rounded-xl p-3 flex items-start gap-2">

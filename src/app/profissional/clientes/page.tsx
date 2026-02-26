@@ -3,7 +3,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Users } from 'lucide-react'
 import { ClienteCardComMeta } from '@/components/ClienteCardComMeta'
 
-export const metadata = { title: 'ECOFIT — Clientes' }
+export const metadata = { title: 'LB.FIT — Clientes' }
 
 export default async function ClientesPage() {
   const supabase = await createSupabaseServerClient()

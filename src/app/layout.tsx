@@ -3,8 +3,8 @@ import './globals.css'
 import { ThemeProvider } from '@/components/ThemeProvider'
 
 export const metadata: Metadata = {
-  title: 'ECOFIT',
-  description: 'ECOFIT — Plataforma profissional de saúde e performance',
+  title: 'LB.FIT',
+  description: 'LB.FIT — Plataforma profissional de saúde e performance',
 }
 
 export default function RootLayout({
