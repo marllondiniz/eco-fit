@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { supabase } from '@/lib/supabase'
+import { translateAuthError } from '@/lib/auth-errors'
 import type { Profile } from '@/types/database'
 
 interface UseProfileReturn {
@@ -35,7 +36,7 @@ export function useProfile(): UseProfileReturn {
       .single()
 
     if (profileError) {
-      setError(profileError.message)
+      setError(translateAuthError(profileError.message))
     } else {
       setProfile(data as Profile)
     }

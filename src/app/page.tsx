@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { translateAuthError } from '@/lib/auth-errors'
 import AuthLayout from '@/components/AuthLayout'
 
 export default function Login() {
@@ -20,10 +21,7 @@ export default function Login() {
     const { error } = await supabase.auth.signInWithPassword({ email, password: senha })
     setCarregando(false)
     if (error) {
-      setErro(error.message === 'Invalid login credentials'
-        ? 'E-mail ou senha incorretos. Tente novamente.'
-        : error.message
-      )
+      setErro(translateAuthError(error.message))
       return
     }
     setSucesso(true)

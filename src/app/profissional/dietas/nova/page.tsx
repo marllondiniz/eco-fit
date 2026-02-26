@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -41,15 +41,24 @@ const OBJETIVOS = [
   'Performance esportiva', 'Reeducação alimentar',
 ]
 
-export default function NovaDietaPage() {
+function NovaDietaForm() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [saving, setSaving] = useState(false)
   const [gerandoIA, setGerandoIA] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
   const [clientes, setClientes] = useState<Cliente[]>([])
   const [loadingClientes, setLoadingClientes] = useState(true)
 
-  const [clienteId, setClienteId] = useState('')
+  // Pré-selecionar cliente e request via query params
+  const [clienteId,  setClienteId]  = useState(searchParams?.get('clientId')  ?? '')
+  const requestId = searchParams?.get('requestId') ?? ''
+
+  // Duração do plano
+  const today = new Date().toISOString().slice(0, 10)
+  const [startDate,     setStartDate]     = useState(today)
+  const [durationWeeks, setDurationWeeks] = useState('4')
+
   const [nome, setNome] = useState('')
   const [objetivo, setObjetivo] = useState('')
   const [metodologia, setMetodologia] = useState('')
@@ -138,7 +147,13 @@ export default function NovaDietaPage() {
     ))
   }
 
-  async function handleSave(status: 'draft' | 'review') {
+  function calcEndDate(start: string, weeks: number) {
+    const d = new Date(start + 'T12:00:00')
+    d.setDate(d.getDate() + weeks * 7 - 1)
+    return d.toISOString().slice(0, 10)
+  }
+
+  async function handleSave(status: 'draft' | 'review' | 'sent') {
     if (!nome.trim()) { setErro('Informe o nome da dieta.'); return }
     if (refeicoes.some(r => !r.name.trim())) { setErro('Todas as refeições precisam de um nome.'); return }
 
@@ -148,17 +163,24 @@ export default function NovaDietaPage() {
     const { data: { user } } = await supabase.auth.getUser()
     if (!user) { setSaving(false); return }
 
+    const durNum  = parseInt(durationWeeks, 10)
+    const endDate = calcEndDate(startDate, durNum)
+    const isSent  = status === 'sent'
+
     const { data: dieta, error: dietError } = await supabase
       .from('diets')
       .insert({
         professional_id: user.id,
-        client_id: clienteId || null,
-        name: nome.trim(),
-        objective: objetivo || null,
-        methodology: metodologia.trim() || null,
-        notes: observacoes.trim() || null,
-        status,
-        sent_at: status === 'review' ? new Date().toISOString() : null,
+        client_id:       clienteId || null,
+        name:            nome.trim(),
+        objective:       objetivo || null,
+        methodology:     metodologia.trim() || null,
+        notes:           observacoes.trim() || null,
+        status:          isSent ? 'sent' : status,
+        sent_at:         isSent ? new Date().toISOString() : null,
+        start_date:      isSent ? startDate : null,
+        end_date:        isSent ? endDate   : null,
+        duration_weeks:  isSent ? durNum    : null,
       })
       .select()
       .single()
@@ -170,23 +192,35 @@ export default function NovaDietaPage() {
     }
 
     const mealsToInsert = refeicoes.map((r, idx) => ({
-      diet_id: dieta.id,
-      name: r.name,
+      diet_id:     dieta.id,
+      name:        r.name,
       time_of_day: r.time_of_day || null,
-      foods: r.foods.filter(f => f.name.trim()).map(f => ({
-        name: f.name,
+      foods:       r.foods.filter(f => f.name.trim()).map(f => ({
+        name:     f.name,
         quantity: f.quantity,
-        unit: f.unit,
+        unit:     f.unit,
         calories: f.calories ? Number(f.calories) : undefined,
       })),
-      notes: r.notes || null,
+      notes:       r.notes || null,
       order_index: idx,
     }))
 
     await supabase.from('diet_meals').insert(mealsToInsert)
 
+    // Marcar solicitação como concluída ao enviar diretamente
+    if (isSent && requestId) {
+      await supabase
+        .from('plan_requests')
+        .update({ status: 'completed' })
+        .eq('id', requestId)
+    }
+
     setSaving(false)
-    router.push(status === 'review' ? '/profissional/supervisao' : '/profissional/dietas')
+    if (isSent) {
+      router.push('/profissional/dietas')
+    } else {
+      router.push(status === 'review' ? '/profissional/supervisao' : '/profissional/dietas')
+    }
   }
 
   return (
@@ -221,6 +255,46 @@ export default function NovaDietaPage() {
 
       {/* Anamnese do cliente selecionado */}
       {clienteId && <AnamnesePanel clienteId={clienteId} />}
+
+      {/* Duração do plano */}
+      <Card>
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base flex items-center gap-2">
+            <span className="text-primary">📅</span> Duração do Plano
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-4 sm:grid-cols-2">
+          <div className="space-y-1.5">
+            <Label>Início do plano</Label>
+            <Input
+              type="date"
+              value={startDate}
+              onChange={e => setStartDate(e.target.value)}
+              className="text-sm"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Duração</Label>
+            <Select value={durationWeeks} onValueChange={setDurationWeeks}>
+              <SelectTrigger className="text-sm"><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">1 semana</SelectItem>
+                <SelectItem value="2">2 semanas</SelectItem>
+                <SelectItem value="4">4 semanas</SelectItem>
+                <SelectItem value="8">8 semanas</SelectItem>
+                <SelectItem value="12">12 semanas</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="sm:col-span-2 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/50 rounded-lg px-4 py-2.5 text-sm text-emerald-700 dark:text-emerald-300">
+            Plano ativo de{' '}
+            <strong>{new Date(startDate + 'T12:00:00').toLocaleDateString('pt-BR')}</strong>
+            {' '}até{' '}
+            <strong>{new Date(calcEndDate(startDate, parseInt(durationWeeks, 10)) + 'T12:00:00').toLocaleDateString('pt-BR')}</strong>
+            {' '}({durationWeeks} {parseInt(durationWeeks) === 1 ? 'semana' : 'semanas'})
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Informações gerais */}
       <Card>
@@ -412,18 +486,31 @@ export default function NovaDietaPage() {
         </p>
       )}
 
-      <div className="flex flex-col sm:flex-row gap-3 pt-2 pb-8">
-        <Button variant="outline" onClick={() => handleSave('draft')} disabled={saving} className="flex-1 sm:flex-none">
-          {saving ? 'Salvando...' : 'Salvar rascunho'}
-        </Button>
-        <Button
-          onClick={() => handleSave('review')}
-          disabled={saving}
-          className="flex-1 sm:flex-none bg-emerald-600 hover:bg-emerald-700 text-white"
-        >
-          {saving ? 'Enviando...' : 'Enviar para revisão'}
-        </Button>
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-3 pb-8 border-t border-border">
+        <p className="text-xs text-muted-foreground order-2 sm:order-1">
+          "Enviar ao cliente" entrega o plano diretamente com status <strong>Ativo</strong>.
+        </p>
+        <div className="flex gap-3 order-1 sm:order-2 w-full sm:w-auto">
+          <Button variant="outline" onClick={() => handleSave('draft')} disabled={saving} className="flex-1 sm:flex-none">
+            {saving ? 'Salvando...' : 'Rascunho'}
+          </Button>
+          <Button
+            onClick={() => handleSave('sent')}
+            disabled={saving}
+            className="flex-1 sm:flex-none gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+          >
+            {saving ? 'Enviando...' : '✉ Enviar ao cliente'}
+          </Button>
+        </div>
       </div>
     </div>
+  )
+}
+
+export default function NovaDietaPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center py-24"><div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" /></div>}>
+      <NovaDietaForm />
+    </Suspense>
   )
 }

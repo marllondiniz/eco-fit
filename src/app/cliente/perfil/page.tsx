@@ -49,10 +49,24 @@ interface ClientProfile {
   goal: string; activity_level: string; avatar_url: string
 }
 
+/**
+ * Anamnese: state e submit usam exatamente as colunas de client_anamnese.
+ * Cada campo do formulário → uma propriedade aqui → uma coluna no banco.
+ * Nenhum campo compartilha propriedade com outro.
+ */
 interface Anamnese {
-  health_history: string; injuries: string; diseases: string
-  medications: string; food_allergies: string; food_preferences: string
-  training_experience: string; notes: string
+  health_history: string
+  injuries: string
+  diseases: string
+  medications: string
+  food_allergies: string
+  food_preferences: string
+  meals_per_day: string
+  training_experience: string
+  weekly_availability: string
+  training_location: string
+  notes: string
+  confirmed: boolean
 }
 
 const emptyProfile = (): ClientProfile => ({
@@ -61,22 +75,34 @@ const emptyProfile = (): ClientProfile => ({
 })
 
 const emptyAnamnese = (): Anamnese => ({
-  health_history: '', injuries: '', diseases: '', medications: '',
-  food_allergies: '', food_preferences: '', training_experience: '', notes: '',
+  health_history: '',
+  injuries: '',
+  diseases: '',
+  medications: '',
+  food_allergies: '',
+  food_preferences: '',
+  meals_per_day: '',
+  training_experience: '',
+  weekly_availability: '',
+  training_location: '',
+  notes: '',
+  confirmed: false,
 })
 
 // ── Componente principal ───────────────────────────────────────────────────────
 export default function PerfilPage() {
-  const [userId, setUserId]     = useState<string | null>(null)
-  const [userName, setUserName] = useState<string | null>(null)
+  const [userId, setUserId]       = useState<string | null>(null)
+  const [userName, setUserName]   = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>(null)
-  const [profile, setProfile]   = useState<ClientProfile>(emptyProfile())
-  const [anamnese, setAnamnese] = useState<Anamnese>(emptyAnamnese())
-  const [loading, setLoading]   = useState(true)
+  const [profile, setProfile]     = useState<ClientProfile>(emptyProfile())
+  const [anamnese, setAnamnese]   = useState<Anamnese>(emptyAnamnese())
+  const [anamneseStep, setAnamneseStep] = useState(1)
+  const [loading, setLoading]     = useState(true)
   const [savingProfile, setSavingProfile] = useState(false)
   const [savingAnamnese, setSavingAnamnese] = useState(false)
   const [successProfile, setSuccessProfile] = useState(false)
   const [successAnamnese, setSuccessAnamnese] = useState(false)
+  const [erroAnamnese, setErroAnamnese] = useState<string | null>(null)
   const [uploadingAvatar, setUploadingAvatar] = useState(false)
   const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
@@ -130,14 +156,18 @@ export default function PerfilPage() {
 
       if (anamneseData) {
         setAnamnese({
-          health_history:      anamneseData.health_history     ?? '',
-          injuries:            anamneseData.injuries            ?? '',
-          diseases:            anamneseData.diseases            ?? '',
-          medications:         anamneseData.medications         ?? '',
-          food_allergies:      anamneseData.food_allergies      ?? '',
-          food_preferences:    anamneseData.food_preferences    ?? '',
-          training_experience: anamneseData.training_experience ?? '',
-          notes:               anamneseData.notes               ?? '',
+          health_history:       anamneseData.health_history        ?? '',
+          injuries:             anamneseData.injuries               ?? '',
+          diseases:             anamneseData.diseases               ?? '',
+          medications:          anamneseData.medications             ?? '',
+          food_allergies:       anamneseData.food_allergies          ?? '',
+          food_preferences:     anamneseData.food_preferences        ?? '',
+          meals_per_day:        anamneseData.meals_per_day           ?? '',
+          training_experience:   anamneseData.training_experience     ?? '',
+          weekly_availability:  anamneseData.weekly_availability     ?? '',
+          training_location:    anamneseData.training_location      ?? '',
+          notes:                anamneseData.notes                    ?? '',
+          confirmed:            anamneseData.confirmed               ?? false,
         })
       }
 
@@ -219,14 +249,107 @@ export default function PerfilPage() {
   // ── Salvar anamnese ───────────────────────────────────────────────────────
   async function saveAnamnese() {
     if (!userId) return
+
+    // Validação mínima para concluir o perfil
+    const requiredFieldsFilled =
+      profile.age &&
+      profile.sex &&
+      profile.height_cm &&
+      profile.weight_kg &&
+      profile.goal &&
+      anamnese.food_allergies.trim() !== '' &&
+      anamnese.food_preferences.trim() !== ''
+
+    if (!requiredFieldsFilled) {
+      setErroAnamnese('Preencha os dados pessoais básicos e os campos obrigatórios da anamnese antes de confirmar.')
+      return
+    }
+    setErroAnamnese(null)
     setSavingAnamnese(true)
 
-    await supabase.from('client_anamnese').upsert({
-      user_id: userId,
-      ...Object.fromEntries(
-        Object.entries(anamnese).map(([k, v]) => [k, v.trim() || null])
-      ),
-    }, { onConflict: 'user_id' })
+    const anamneseColumns = [
+      'health_history', 'injuries', 'diseases', 'medications',
+      'food_allergies', 'food_preferences', 'meals_per_day',
+      'training_experience', 'weekly_availability', 'training_location',
+      'notes', 'confirmed',
+    ] as const
+    const payload: Record<string, unknown> = { user_id: userId }
+    for (const key of anamneseColumns) {
+      const v = anamnese[key]
+      payload[key] = key === 'confirmed' ? v : (typeof v === 'string' ? v.trim() || null : v)
+    }
+
+    await supabase.from('client_anamnese').upsert(payload, { onConflict: 'user_id' })
+
+    // Se o usuário marcou a confirmação e preencheu os campos obrigatórios:
+    // 1) marcar onboarding concluído  2) criar/confirmar solicitação de plano
+    if (anamnese.confirmed && requiredFieldsFilled) {
+      await supabase
+        .from('profiles')
+        .update({ onboarding_completed: true })
+        .eq('id', userId)
+
+      // Verificar se já existe solicitação pendente para este cliente
+      const { data: existingRequest } = await supabase
+        .from('plan_requests')
+        .select('id')
+        .eq('client_id', userId)
+        .in('status', ['pending', 'in_progress'])
+        .maybeSingle()
+
+      if (!existingRequest) {
+        // 1º) tentar profissional via convite (o que convidou o cliente)
+        let professionalId: string | null = null
+        if (userEmail) {
+          const { data: invite } = await supabase
+            .from('invitations')
+            .select('invited_by')
+            .eq('email', userEmail)
+            .not('used_at', 'is', null)
+            .order('used_at', { ascending: false })
+            .limit(1)
+            .maybeSingle()
+          professionalId = (invite as any)?.invited_by ?? null
+        }
+
+        // 2º) fallback: último treino ou dieta recebido
+        if (!professionalId) {
+          const [{ data: lastWorkout }, { data: lastDiet }] = await Promise.all([
+            supabase
+              .from('workouts')
+              .select('professional_id')
+              .eq('client_id', userId)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle(),
+            supabase
+              .from('diets')
+              .select('professional_id')
+              .eq('client_id', userId)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle(),
+          ])
+          professionalId = (lastWorkout as any)?.professional_id
+            ?? (lastDiet as any)?.professional_id
+            ?? null
+        }
+
+        // Salvar invited_by em client_profiles para uso futuro
+        if (professionalId) {
+          await supabase
+            .from('client_profiles')
+            .upsert({ user_id: userId, invited_by: professionalId }, { onConflict: 'user_id' })
+        }
+
+        await supabase.from('plan_requests').insert({
+          client_id: userId,
+          professional_id: professionalId,
+          type: 'both',
+          status: 'pending',
+        })
+      }
+    }
 
     setSavingAnamnese(false)
     setSuccessAnamnese(true)
@@ -468,8 +591,14 @@ export default function PerfilPage() {
               Suas informações de saúde são confidenciais e visíveis somente para você e o seu profissional responsável.
             </p>
           </div>
+          {erroAnamnese && (
+            <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-red-600 dark:text-red-400 flex-shrink-0" />
+              <p className="text-sm text-red-700 dark:text-red-300">{erroAnamnese}</p>
+            </div>
+          )}
 
-          {/* Bloco: Saúde */}
+          {/* Bloco: Saúde e condições */}
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
@@ -495,12 +624,53 @@ export default function PerfilPage() {
                   rows={2}
                 />
               </div>
+              <div className="space-y-2">
+                <Label>Você tem alguma destas condições? (marque as que se aplicam)</Label>
+                <div className="grid sm:grid-cols-2 gap-2 text-xs">
+                  {[
+                    'Intolerância à lactose',
+                    'Sensibilidade ao glúten',
+                    'Intestino irritável',
+                    'Refluxo ou gastrite',
+                    'Pressão alta',
+                    'Pressão baixa',
+                    'Colesterol alto',
+                    'Triglicerídeos altos',
+                    'Diabetes Tipo 1',
+                    'Diabetes Tipo 2',
+                    'Cálculos renais',
+                  ].map((cond) => {
+                    const checked = anamnese.diseases.includes(cond)
+                    return (
+                      <label key={cond} className="flex items-start gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5 h-3.5 w-3.5 rounded border-border text-primary focus:ring-0"
+                          checked={checked}
+                          onChange={() =>
+                            setAnamnese((a) => ({
+                              ...a,
+                              diseases: checked
+                                ? a.diseases
+                                  .split('\n')
+                                  .filter((l) => l.trim() && l.trim() !== `- ${cond}`)
+                                  .join('\n')
+                                : `${a.diseases.trim()}\n- ${cond}`.trim(),
+                            }))
+                          }
+                        />
+                        <span>{cond}</span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
               <div className="space-y-1.5">
-                <Label>Doenças pré-existentes</Label>
+                <Label>Tem mais alguma condição médica que não foi mencionada?</Label>
                 <Textarea
                   value={anamnese.diseases}
                   onChange={e => setAnamnese(a => ({ ...a, diseases: e.target.value }))}
-                  placeholder="Hipertensão, diabetes, hipotireoidismo, etc."
+                  placeholder="Descreva outras condições médicas relevantes."
                   rows={2}
                 />
               </div>
@@ -525,22 +695,41 @@ export default function PerfilPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
-                <Label>Alergias ou intolerâncias alimentares</Label>
+                <Label>Tem alergia a algum alimento? Se sim, digite quais</Label>
                 <Textarea
                   value={anamnese.food_allergies}
                   onChange={e => setAnamnese(a => ({ ...a, food_allergies: e.target.value }))}
-                  placeholder="Lactose, glúten, amendoim, frutos do mar..."
+                  placeholder="Ex.: lactose, glúten, frutos do mar..."
                   rows={2}
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>Preferências alimentares</Label>
+                <Label>Tem algum estilo alimentar? (Ex: vegano, vegetariano, ...)</Label>
                 <Textarea
                   value={anamnese.food_preferences}
                   onChange={e => setAnamnese(a => ({ ...a, food_preferences: e.target.value }))}
-                  placeholder="Vegetariano, vegano, alimentos que não gosta, preferências..."
+                  placeholder="Descreva seu estilo alimentar e preferências."
                   rows={2}
                 />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Prefere quantas refeições por dia?</Label>
+                <Select
+                  value={anamnese.meals_per_day || 'none'}
+                  onValueChange={(value) =>
+                    setAnamnese(a => ({ ...a, meals_per_day: value === 'none' ? '' : value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Selecione</SelectItem>
+                    <SelectItem value="3">3 refeições</SelectItem>
+                    <SelectItem value="4">4 refeições</SelectItem>
+                    <SelectItem value="5-6">5 a 6 refeições</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </CardContent>
           </Card>
@@ -554,27 +743,104 @@ export default function PerfilPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
-                <Label>Histórico de atividade física</Label>
-                <Textarea
+                <Label>Qual seu nível na musculação?</Label>
+                <Select
                   value={anamnese.training_experience}
-                  onChange={e => setAnamnese(a => ({ ...a, training_experience: e.target.value }))}
-                  placeholder="Há quanto tempo treina, modalidades praticadas, frequência atual..."
-                  rows={3}
-                />
+                  onValueChange={(value) =>
+                    setAnamnese(a => ({ ...a, training_experience: value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Iniciante">Iniciante</SelectItem>
+                    <SelectItem value="Intermediário">Intermediário</SelectItem>
+                    <SelectItem value="Avançado">Avançado</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>Observações gerais</Label>
+                <Label>Você tem disponibilidade de treinar no máximo quantas vezes por semana?</Label>
+                <Select
+                  value={anamnese.weekly_availability || 'none'}
+                  onValueChange={(value) =>
+                    setAnamnese(a => ({ ...a, weekly_availability: value === 'none' ? '' : value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Selecione</SelectItem>
+                    <SelectItem value="2">2x por semana</SelectItem>
+                    <SelectItem value="3">3x por semana</SelectItem>
+                    <SelectItem value="4">4x por semana</SelectItem>
+                    <SelectItem value="5">5x por semana</SelectItem>
+                    <SelectItem value="6">6x por semana</SelectItem>
+                    <SelectItem value="7">7x por semana</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Vai treinar onde?</Label>
+                <Select
+                  value={anamnese.training_location || 'none'}
+                  onValueChange={(value) =>
+                    setAnamnese(a => ({ ...a, training_location: value === 'none' ? '' : value }))
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Selecione</SelectItem>
+                    <SelectItem value="Em casa">Em casa</SelectItem>
+                    <SelectItem value="Academia">Academia</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Tem alguma lesão ou limitação?</Label>
                 <Textarea
-                  value={anamnese.notes}
-                  onChange={e => setAnamnese(a => ({ ...a, notes: e.target.value }))}
-                  placeholder="Qualquer informação adicional relevante para o seu profissional..."
+                  value={anamnese.injuries}
+                  onChange={e => setAnamnese(a => ({ ...a, injuries: e.target.value }))}
+                  placeholder="Descreva lesões, dores ou limitações articulares."
                   rows={2}
                 />
               </div>
             </CardContent>
           </Card>
 
-          <div className="flex items-center gap-3 pb-4">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                Observações gerais
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <Textarea
+                value={anamnese.notes}
+                onChange={e => setAnamnese(a => ({ ...a, notes: e.target.value }))}
+                placeholder="Qualquer outra informação que deseje compartilhar com seu profissional."
+                rows={3}
+              />
+            </CardContent>
+          </Card>
+
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 pb-4">
+            <label className="flex items-start gap-2 text-xs text-muted-foreground">
+              <input
+                type="checkbox"
+                className="mt-0.5 h-3.5 w-3.5 rounded border-border text-primary focus:ring-0"
+                checked={anamnese.confirmed}
+                onChange={e => setAnamnese(a => ({ ...a, confirmed: e.target.checked }))}
+              />
+              <span>
+                Confirmo que todas as informações fornecidas são verdadeiras e serão usadas para
+                personalizar meus planos de dieta e treino.
+              </span>
+            </label>
             <Button
               onClick={saveAnamnese}
               disabled={savingAnamnese}

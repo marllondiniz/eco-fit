@@ -8,6 +8,13 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Dialog,
   DialogContent,
   DialogHeader,
@@ -15,9 +22,9 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { UserCheck, Plus, Copy, CheckCircle, Clock, Mail } from 'lucide-react'
+import { UserCheck, Plus, Copy, CheckCircle, Clock, Mail, XCircle, Trash2 } from 'lucide-react'
 import { formatDate, formatDistanceToNow } from '@/lib/date-utils'
-import type { Profile, Invitation } from '@/types/database'
+import type { Profile, Invitation, ProfessionalType } from '@/types/database'
 
 export default function ProfissionaisPage() {
   const [profissionais, setProfissionais] = useState<Profile[]>([])
@@ -25,6 +32,7 @@ export default function ProfissionaisPage() {
   const [loading, setLoading] = useState(true)
   const [modalOpen, setModalOpen] = useState(false)
   const [emailConvite, setEmailConvite] = useState('')
+  const [tipoConvite, setTipoConvite] = useState<ProfessionalType>('personal')
   const [enviando, setEnviando] = useState(false)
   const [novoLink, setNovoLink] = useState<string | null>(null)
   const [copiado, setCopiado] = useState(false)
@@ -32,8 +40,16 @@ export default function ProfissionaisPage() {
 
   async function load() {
     const [{ data: profs }, { data: invs }] = await Promise.all([
-      supabase.from('profiles').select('*').eq('role', 'personal').order('created_at', { ascending: false }),
-      supabase.from('invitations').select('*').eq('role', 'personal').order('created_at', { ascending: false }),
+      supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'personal')
+        .order('created_at', { ascending: false }),
+      supabase
+        .from('invitations')
+        .select('*')
+        .eq('role', 'personal')
+        .order('created_at', { ascending: false }),
     ])
     setProfissionais(profs as Profile[] ?? [])
     setConvites(invs as Invitation[] ?? [])
@@ -64,6 +80,7 @@ export default function ProfissionaisPage() {
       .insert({
         email: emailConvite.trim().toLowerCase(),
         role: 'personal',
+        professional_type: tipoConvite,
         invited_by: user!.id,
       })
       .select()
@@ -91,9 +108,38 @@ export default function ProfissionaisPage() {
     setTimeout(() => setCopiado(false), 2000)
   }
 
+  async function handleCancelarConvite(id: string) {
+    setErro(null)
+    const { error } = await supabase
+      .from('invitations')
+      .update({ expires_at: new Date().toISOString() })
+      .eq('id', id)
+
+    if (error) {
+      setErro('Erro ao cancelar convite.')
+      return
+    }
+    await load()
+  }
+
+  async function handleExcluirConvite(id: string) {
+    setErro(null)
+    const { error } = await supabase
+      .from('invitations')
+      .delete()
+      .eq('id', id)
+
+    if (error) {
+      setErro('Erro ao excluir convite.')
+      return
+    }
+    await load()
+  }
+
   function fecharModal() {
     setModalOpen(false)
     setEmailConvite('')
+    setTipoConvite('personal')
     setNovoLink(null)
     setErro(null)
   }
@@ -164,7 +210,11 @@ export default function ProfissionaisPage() {
                   </div>
                   <div className="mt-3">
                     <Badge className="bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border-0 text-xs">
-                      Profissional
+                      {prof.professional_type === 'nutritionist'
+                        ? 'Nutricionista'
+                        : prof.professional_type === 'personal'
+                          ? 'Personal'
+                          : 'Personal + Nutricionista'}
                     </Badge>
                   </div>
                 </CardContent>
@@ -194,7 +244,9 @@ export default function ProfissionaisPage() {
                   return (
                     <li key={convite.id} className="flex items-center justify-between py-3 gap-3">
                       <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-foreground truncate">{convite.email}</p>
+                        <p className="text-sm font-medium text-foreground truncate">
+                          {convite.email}
+                        </p>
                         <p className="text-xs text-muted-foreground mt-0.5">
                           Enviado {formatDistanceToNow(convite.created_at)} ·
                           {expirado ? (
@@ -202,6 +254,14 @@ export default function ProfissionaisPage() {
                           ) : (
                             <span> Expira em {formatDate(convite.expires_at)}</span>
                           )}
+                        </p>
+                        <p className="text-xs text-muted-foreground mt-0.5">
+                          Tipo:{' '}
+                          {convite.professional_type === 'nutritionist'
+                            ? 'Nutricionista'
+                            : convite.professional_type === 'personal'
+                              ? 'Personal'
+                              : 'Personal + Nutricionista'}
                         </p>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
@@ -221,6 +281,26 @@ export default function ProfissionaisPage() {
                         >
                           <Copy className="w-3.5 h-3.5" />
                           Copiar link
+                        </Button>
+                        {!expirado && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs gap-1 text-amber-600 hover:text-amber-700"
+                            onClick={() => handleCancelarConvite(convite.id)}
+                          >
+                            <XCircle className="w-3.5 h-3.5" />
+                            Cancelar
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="text-xs gap-1 text-red-600 hover:text-red-700"
+                          onClick={() => handleExcluirConvite(convite.id)}
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          Excluir
                         </Button>
                       </div>
                     </li>
@@ -278,6 +358,22 @@ export default function ProfissionaisPage() {
                   placeholder="profissional@email.com"
                   onKeyDown={e => e.key === 'Enter' && handleConvidar()}
                 />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="tipo-profissional">Tipo de profissional</Label>
+                <Select
+                  value={tipoConvite}
+                  onValueChange={value => setTipoConvite(value as ProfessionalType)}
+                >
+                  <SelectTrigger id="tipo-profissional">
+                    <SelectValue placeholder="Selecione o tipo" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="personal">Personal</SelectItem>
+                    <SelectItem value="nutritionist">Nutricionista</SelectItem>
+                    <SelectItem value="both">Ambos (personal + nutricionista)</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               {erro && (
                 <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">

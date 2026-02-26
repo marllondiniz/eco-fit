@@ -1,9 +1,7 @@
 import { createSupabaseServerClient } from '@/lib/supabase-server'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Card, CardContent } from '@/components/ui/card'
 import { Users } from 'lucide-react'
-import { formatDate } from '@/lib/date-utils'
+import { ClienteCardComMeta } from '@/components/ClienteCardComMeta'
 
 export const metadata = { title: 'ECOFIT — Clientes' }
 
@@ -44,10 +42,22 @@ export default async function ClientesPage() {
     return { dietas: d ?? 0, treinos: t ?? 0 }
   }
 
+  const clientIds = clientes.map((c) => c.id)
+  const { data: gamificationByClient } = await supabase
+    .from('user_gamification')
+    .select('user_id, weekly_target_sessions')
+    .in('user_id', clientIds)
+
+  const metaByClient = new Map<string, number>()
+  for (const row of gamificationByClient ?? []) {
+    metaByClient.set(row.user_id, row.weekly_target_sessions ?? 3)
+  }
+
   const clientesComContagem = await Promise.all(
     clientes.map(async (c) => ({
       ...c,
       counts: await countPlans(c.id),
+      weeklyTarget: metaByClient.get(c.id) ?? null,
     }))
   )
 
@@ -72,42 +82,14 @@ export default async function ClientesPage() {
         </Card>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {clientesComContagem.map((cliente) => {
-            const initials = cliente.full_name
-              ? cliente.full_name.split(' ').map((n: string) => n[0]).slice(0, 2).join('').toUpperCase()
-              : cliente.email?.[0]?.toUpperCase() ?? 'C'
-
-            return (
-              <Card key={cliente.id} className="hover:shadow-md transition-shadow">
-                <CardContent className="p-5">
-                  <div className="flex items-start gap-3">
-                    <Avatar className="w-10 h-10 flex-shrink-0">
-                      <AvatarFallback className="bg-blue-100 text-blue-700 text-sm font-semibold">
-                        {initials}
-                      </AvatarFallback>
-                    </Avatar>
-                    <div className="min-w-0 flex-1">
-                      <p className="font-semibold text-foreground truncate">
-                        {cliente.full_name ?? 'Sem nome'}
-                      </p>
-                      <p className="text-xs text-muted-foreground truncate mt-0.5">{cliente.email}</p>
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Desde {formatDate(cliente.created_at)}
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 mt-4">
-                    <Badge variant="secondary" className="text-xs gap-1">
-                      {cliente.counts.dietas} {cliente.counts.dietas === 1 ? 'dieta' : 'dietas'}
-                    </Badge>
-                    <Badge variant="secondary" className="text-xs gap-1">
-                      {cliente.counts.treinos} {cliente.counts.treinos === 1 ? 'treino' : 'treinos'}
-                    </Badge>
-                  </div>
-                </CardContent>
-              </Card>
-            )
-          })}
+          {clientesComContagem.map((cliente) => (
+            <ClienteCardComMeta
+              key={cliente.id}
+              cliente={cliente}
+              counts={cliente.counts}
+              weeklyTarget={cliente.weeklyTarget}
+            />
+          ))}
         </div>
       )}
     </div>

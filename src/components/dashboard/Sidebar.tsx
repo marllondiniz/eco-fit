@@ -4,7 +4,8 @@ import Link from 'next/link'
 import Image from 'next/image'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
-import type { UserRole } from '@/types/database'
+import type { UserRole, ProfessionalType, Profile } from '@/types/database'
+import { useProfile } from '@/hooks/useProfile'
 import {
   LayoutDashboard,
   Users,
@@ -50,7 +51,6 @@ const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
     { label: 'Visão Geral', href: '/admin', icon: LayoutDashboard },
     { label: 'Profissionais', href: '/admin/profissionais', icon: UserCheck },
     { label: 'Usuários', href: '/admin/usuarios', icon: Users },
-    { label: 'Configurações', href: '/admin/configuracoes', icon: Settings },
   ],
 }
 
@@ -61,7 +61,24 @@ interface SidebarProps {
 
 export function Sidebar({ role, onClose }: SidebarProps) {
   const pathname = usePathname()
-  const navItems = NAV_BY_ROLE[role] ?? NAV_BY_ROLE.user
+  const { profile } = useProfile()
+  const profType: ProfessionalType | null =
+    role === 'personal' ? (profile?.professional_type ?? 'both') : null
+
+  let navItems = NAV_BY_ROLE[role] ?? NAV_BY_ROLE.user
+
+  // Para profissionais, filtramos Dietas/Treinos conforme o tipo
+  if (role === 'personal') {
+    navItems = NAV_BY_ROLE.personal.filter((item) => {
+      if (item.href.startsWith('/profissional/dietas')) {
+        return profType === 'nutritionist' || profType === 'both'
+      }
+      if (item.href.startsWith('/profissional/treinos')) {
+        return profType === 'personal' || profType === 'both'
+      }
+      return true
+    })
+  }
   const homeHref = HOME_BY_ROLE[role] ?? '/cliente'
 
   const roleLabel: Record<UserRole, string> = {

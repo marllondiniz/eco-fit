@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { translateAuthError } from '@/lib/auth-errors'
 import AuthLayout from '@/components/AuthLayout'
 
 export default function RedefinirSenha() {
@@ -39,7 +40,7 @@ export default function RedefinirSenha() {
     const { error } = await supabase.auth.updateUser({ password: novaSenha })
     setCarregando(false)
     if (error) {
-      setErro(error.message)
+      setErro(translateAuthError(error.message))
       return
     }
     setSucesso(true)

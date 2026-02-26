@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import Link from 'next/link'
 import { supabase } from '@/lib/supabase'
+import { translateAuthError } from '@/lib/auth-errors'
 import AuthLayout from '@/components/AuthLayout'
 
 export default function EsqueceuSenha() {
@@ -20,7 +21,7 @@ export default function EsqueceuSenha() {
     })
     setCarregando(false)
     if (error) {
-      setErro(error.message)
+      setErro(translateAuthError(error.message))
       return
     }
     setEnviado(true)

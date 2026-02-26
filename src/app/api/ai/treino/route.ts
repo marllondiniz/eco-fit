@@ -11,41 +11,44 @@ export async function POST(req: NextRequest) {
 
   const body = await req.json()
   const {
+    divisaoAtual,
     objetivo = '',
     clienteNome = '',
-    divisao = '',
     observacoes = '',
     numExercicios = 8,
   } = body
 
-  const prompt = `Você é um personal trainer profissional criando um plano de treino detalhado.
+  if (!divisaoAtual || !['A', 'B', 'C'].includes(divisaoAtual)) {
+    return NextResponse.json(
+      { error: 'divisaoAtual é obrigatório e deve ser A, B ou C.' },
+      { status: 400 }
+    )
+  }
+
+  const prompt = `Você é um personal trainer profissional. O personal já definiu que está montando o Treino ${divisaoAtual}. Sua tarefa é APENAS sugerir uma lista de exercícios para essa divisão (Treino ${divisaoAtual}), nada mais.
 
 Dados do cliente:
 - Nome: ${clienteNome || 'Não informado'}
 - Objetivo: ${objetivo || 'Hipertrofia'}
-- Divisão de treino: ${divisao || 'A/B/C'}
 - Observações: ${observacoes || 'Nenhuma'}
-- Número de exercícios: ${numExercicios}
+- Número de exercícios desejados: ${numExercicios}
 
-Crie um plano de treino completo e retorne APENAS um JSON válido (sem markdown, sem explicações extras) no seguinte formato:
+Retorne APENAS um JSON válido (sem markdown, sem explicações) no formato:
 {
-  "nome": "Nome descritivo do treino",
-  "divisao": "${divisao || 'A/B/C'}",
-  "metodologia": "Descrição da metodologia de treino e periodização",
-  "observacoes": "Recomendações gerais para o cliente",
   "exercicios": [
     {
-      "division_label": "Divisão (A, B, C, etc.)",
-      "name": "Nome do exercício",
-      "sets": número de séries (número inteiro),
+      "name": "Nome do exercício em português",
+      "sets": número de séries (inteiro),
       "reps": "repetições (ex: 8-12 ou 15 ou até a falha)",
-      "rest_seconds": segundos de descanso (número inteiro),
-      "notes": "Técnica e observações específicas"
+      "rest_seconds": segundos de descanso (inteiro),
+      "notes": "Técnica e observações opcionais"
     }
-  ]
+  ],
+  "metodologia": "Sugestão opcional de metodologia só para esta divisão",
+  "observacoes": "Sugestão opcional de observações só para esta divisão"
 }
 
-Seja específico, use nomes de exercícios reais em português, distribua os ${numExercicios} exercícios pelas divisões de forma equilibrada.`
+Gere exatamente ${numExercicios} exercícios para o Treino ${divisaoAtual}. Use nomes de exercícios reais em português. Não crie outras divisões (A/B/C) nem nome do plano.`
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -57,7 +60,7 @@ Seja específico, use nomes de exercícios reais em português, distribua os ${n
       body: JSON.stringify({
         model: 'gpt-4o-mini',
         messages: [
-          { role: 'system', content: 'Você é um personal trainer experiente. Responda SEMPRE com JSON válido e nada mais.' },
+          { role: 'system', content: 'Você é um personal trainer. Responda SEMPRE com JSON válido. Gere apenas exercícios para a divisão informada (Treino A, B ou C), sem criar plano completo nem outras divisões.' },
           { role: 'user', content: prompt },
         ],
         temperature: 0.7,
@@ -78,7 +81,11 @@ Seja específico, use nomes de exercícios reais em português, distribua os ${n
     const content = data.choices?.[0]?.message?.content ?? '{}'
     const parsed = JSON.parse(content)
 
-    return NextResponse.json(parsed)
+    return NextResponse.json({
+      exercicios: parsed.exercicios ?? [],
+      metodologia: parsed.metodologia ?? null,
+      observacoes: parsed.observacoes ?? null,
+    })
   } catch (e: any) {
     return NextResponse.json({ error: e.message ?? 'Erro desconhecido.' }, { status: 500 })
   }

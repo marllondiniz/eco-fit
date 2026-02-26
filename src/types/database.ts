@@ -1,4 +1,5 @@
 export type UserRole = 'user' | 'personal' | 'admin'
+export type ProfessionalType = 'personal' | 'nutritionist' | 'both'
 export type PlanStatus = 'draft' | 'review' | 'sent'
 
 export interface Profile {
@@ -7,6 +8,7 @@ export interface Profile {
   full_name: string | null
   avatar_url: string | null
   role: UserRole
+  professional_type?: ProfessionalType | null
   created_at: string
   updated_at: string
 }
@@ -15,6 +17,7 @@ export interface Invitation {
   id: string
   email: string
   role: UserRole
+  professional_type?: ProfessionalType | null
   token: string
   invited_by: string | null
   used_at: string | null

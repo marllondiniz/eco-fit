@@ -9,6 +9,13 @@ export function getLocalDateString(date: Date = new Date()): string {
   return `${y}-${m}-${d}`
 }
 
+/** Dia da semana no fuso local: 'mon' (Segunda) até 'sun' (Domingo). */
+export function getLocalDayOfWeek(date: Date = new Date()): 'mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun' {
+  const day = date.getDay() // 0 = Domingo, 1 = Segunda, ...
+  const map: ('mon' | 'tue' | 'wed' | 'thu' | 'fri' | 'sat' | 'sun')[] = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat']
+  return map[day]
+}
+
 /** Segunda-feira da semana atual (fuso local). */
 export function getLocalWeekStart(): string {
   const now = new Date()
@@ -23,6 +30,22 @@ export function getLocalWeekStart(): string {
 export function getLocalMonthStart(): string {
   const now = new Date()
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-01`
+}
+
+/** Retorna as datas (YYYY-MM-DD) de uma semana a partir da segunda-feira. */
+export function getWeekDates(weekStart: string): string[] {
+  const [y, m, d] = weekStart.split('-').map(Number)
+  const start = new Date(y, m - 1, d)
+  return Array.from({ length: 7 }, (_, i) => {
+    const d = new Date(start)
+    d.setDate(start.getDate() + i)
+    return getLocalDateString(d)
+  })
+}
+
+/** Quantidade de dias no mês (y, m em 1-12). */
+export function getDaysInMonth(year: number, month: number): number {
+  return new Date(year, month, 0).getDate()
 }
 
 export function formatDistanceToNow(dateString: string): string {

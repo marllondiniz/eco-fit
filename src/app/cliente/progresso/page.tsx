@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
-import { getLocalDateString } from '@/lib/date-utils'
+import { getLocalDateString, getLocalWeekStart } from '@/lib/date-utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
@@ -102,6 +102,11 @@ export default function ProgressoPage() {
   // ---- Computações ----
   const levelInfo = gamification ? getLevelInfo(gamification.total_xp) : null
   const levelCfg = levelInfo ? getLevelConfig(levelInfo.level) : null
+  const weekStart = getLocalWeekStart()
+  const today = getLocalDateString()
+  const sessionsThisWeek = sessions.filter(s => s.date >= weekStart && s.date <= today && s.is_complete).length
+  const weeklyTarget = gamification?.weekly_target_sessions ?? 0
+  const weeklyPct = weeklyTarget > 0 ? Math.min(100, Math.round((sessionsThisWeek / weeklyTarget) * 100)) : 0
 
   // Mapa de datas com sessões
   const sessionByDate = new Map<string, any[]>()
@@ -126,16 +131,16 @@ export default function ProgressoPage() {
 
   // Semanas do mês (para frequência semanal)
   const weeklyFrequency: { label: string; days: number }[] = []
-  let weekStart = 0
-  while (weekStart < monthDays.length) {
-    const weekDays = monthDays.slice(weekStart, weekStart + 7)
+  let weekIndex = 0
+  while (weekIndex < monthDays.length) {
+    const weekDays = monthDays.slice(weekIndex, weekIndex + 7)
     const activeDays = weekDays.filter(d => sessionByDate.has(d)).length
     const startDate = new Date(weekDays[0])
     weeklyFrequency.push({
       label: `${startDate.getDate()}/${startDate.getMonth() + 1}`,
       days: activeDays,
     })
-    weekStart += 7
+    weekIndex += 7
   }
 
   // Histórico recente
@@ -237,6 +242,19 @@ export default function ProgressoPage() {
                 <p className="text-xs text-muted-foreground">{gamification.total_sessions === 1 ? 'treino completo' : 'treinos completos'}</p>
               </CardContent>
             </Card>
+
+            {weeklyTarget > 0 && (
+              <Card>
+                <CardContent className="p-4">
+                  <div className="flex items-center gap-2 mb-2">
+                    <Target className="w-4 h-4 text-emerald-500" />
+                    <span className="text-xs text-muted-foreground">Meta desta semana</span>
+                  </div>
+                  <p className="text-3xl font-bold text-foreground">{sessionsThisWeek} / {weeklyTarget}</p>
+                  <p className="text-xs text-muted-foreground">{weeklyPct}% da meta</p>
+                </CardContent>
+              </Card>
+            )}
           </div>
 
           {/* Frequência últimos 7 dias */}

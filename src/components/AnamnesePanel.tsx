@@ -26,7 +26,10 @@ interface AnamneseData {
   medications?: string | null
   food_allergies?: string | null
   food_preferences?: string | null
+  meals_per_day?: string | null
   training_experience?: string | null
+  weekly_availability?: string | null
+  training_location?: string | null
   notes?: string | null
 }
 
@@ -210,7 +213,7 @@ export function AnamnesePanel({ clienteId }: AnamnesePanelProps) {
           )}
 
           {/* Alimentação */}
-          {(anamnese?.food_allergies || anamnese?.food_preferences) && (
+          {(anamnese?.food_allergies || anamnese?.food_preferences || anamnese?.meals_per_day) && (
             <div className="bg-muted/50 rounded-xl p-4 space-y-2">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
                 <Utensils className="w-3.5 h-3.5" /> Alimentação
@@ -227,11 +230,17 @@ export function AnamnesePanel({ clienteId }: AnamnesePanelProps) {
                   <p className="text-sm text-foreground">{anamnese.food_preferences}</p>
                 </div>
               )}
+              {anamnese.meals_per_day && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Refeições por dia</p>
+                  <p className="text-sm text-foreground">{anamnese.meals_per_day}</p>
+                </div>
+              )}
             </div>
           )}
 
           {/* Treino */}
-          {(anamnese?.training_experience || anamnese?.health_history) && (
+          {(anamnese?.training_experience || anamnese?.health_history || anamnese?.weekly_availability || anamnese?.training_location) && (
             <div className="bg-muted/50 rounded-xl p-4 space-y-2">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide flex items-center gap-1.5">
                 <Dumbbell className="w-3.5 h-3.5" /> Treino & Saúde
@@ -244,8 +253,20 @@ export function AnamnesePanel({ clienteId }: AnamnesePanelProps) {
               )}
               {anamnese.training_experience && (
                 <div>
-                  <p className="text-xs font-medium text-muted-foreground">Experiência com treino</p>
+                  <p className="text-xs font-medium text-muted-foreground">Nível / experiência com treino</p>
                   <p className="text-sm text-foreground">{anamnese.training_experience}</p>
+                </div>
+              )}
+              {anamnese.weekly_availability && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Disponibilidade de treino</p>
+                  <p className="text-sm text-foreground">Até {anamnese.weekly_availability}x por semana</p>
+                </div>
+              )}
+              {anamnese.training_location && (
+                <div>
+                  <p className="text-xs font-medium text-muted-foreground">Local de treino</p>
+                  <p className="text-sm text-foreground">{anamnese.training_location}</p>
                 </div>
               )}
             </div>

@@ -1,10 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { supabase } from '@/lib/supabase'
-import { getLocalDateString, getLocalWeekStart, getLocalMonthStart } from '@/lib/date-utils'
-import { formatDate } from '@/lib/date-utils'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import {
+  getLocalDateString,
+  getLocalWeekStart,
+  getLocalMonthStart,
+  getLocalDayOfWeek,
+  formatDate,
+} from '@/lib/date-utils'
+import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
   Utensils,
@@ -16,32 +21,73 @@ import {
   Target,
   Zap,
   CheckCircle2,
+  MoonStar,
+  CalendarDays,
 } from 'lucide-react'
 import Link from 'next/link'
+
+// ─── Tipos ────────────────────────────────────────────────────────────────────
 
 interface ClienteEvolucaoBlockProps {
   userId: string
   treinos: any[]
-  totalDietas: number
-  totalTreinos: number
+  dietas?: any[]
+  scheduleMap: Record<string, string | null>
 }
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+const DIAS_LABEL: Record<string, string> = {
+  mon: 'segunda', tue: 'terça', wed: 'quarta',
+  thu: 'quinta', fri: 'sexta', sat: 'sábado', sun: 'domingo',
+}
+const DIAS_ORDER = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']
+
+function getProximoTreino(
+  scheduleMap: Record<string, string | null>,
+  todayDow: string,
+): { dow: string; label: string } | null {
+  const startIdx = DIAS_ORDER.indexOf(todayDow)
+  for (let i = 1; i <= 7; i++) {
+    const dow = DIAS_ORDER[(startIdx + i) % 7]
+    const label = scheduleMap[dow]
+    if (label) return { dow, label }
+  }
+  return null
+}
+
+// ─── Componente ───────────────────────────────────────────────────────────────
 
 export function ClienteEvolucaoBlock({
   userId,
   treinos,
-  totalDietas,
-  totalTreinos,
+  dietas = [],
+  scheduleMap,
 }: ClienteEvolucaoBlockProps) {
-  const [todaySession, setTodaySession] = useState<any[]>([])
-  const [sessionsThisWeek, setSessionsThisWeek] = useState<any[]>([])
-  const [sessionsThisMonth, setSessionsThisMonth] = useState<any[]>([])
-  const [gamification, setGamification] = useState<any>(null)
-  const [loading, setLoading] = useState(true)
+  const [todaySession, setTodaySession]     = useState<any[]>([])
+  const [sessionsThisWeek, setWeek]         = useState<any[]>([])
+  const [sessionsThisMonth, setMonth]       = useState<any[]>([])
+  const [gamification, setGamification]    = useState<any>(null)
+  const [loading, setLoading]               = useState(true)
+
+  // Resolver treino do dia no cliente (timezone certa)
+  const todayDow   = getLocalDayOfWeek()
+  const todayLabel = scheduleMap[todayDow] ?? null
+
+  const treinoDoDia = useMemo(() => {
+    if (!todayLabel) return null
+    return treinos.find((t: any) => t.label === todayLabel) ?? null
+  }, [todayLabel, treinos])
+
+  const hasSchedule    = Object.keys(scheduleMap).length > 0
+  const hasActivePlan  = treinos.length > 0
+  const hojeDescanso   = hasActivePlan && !treinoDoDia
+  const proximoTreino  = hojeDescanso ? getProximoTreino(scheduleMap, todayDow) : null
 
   useEffect(() => {
     async function load() {
-      const today = getLocalDateString()
-      const weekStart = getLocalWeekStart()
+      const today      = getLocalDateString()
+      const weekStart  = getLocalWeekStart()
       const monthStart = getLocalMonthStart()
 
       const [
@@ -71,40 +117,154 @@ export function ClienteEvolucaoBlock({
       ])
 
       setTodaySession(todayData ?? [])
-      setSessionsThisWeek(weekData ?? [])
-      setSessionsThisMonth(monthData ?? [])
+      setWeek(weekData ?? [])
+      setMonth(monthData ?? [])
       setGamification(gamiData ?? null)
       setLoading(false)
     }
     load()
   }, [userId])
 
-  const weeklyComplete = sessionsThisWeek.filter(s => s.is_complete).length
-  const monthComplete = sessionsThisMonth.filter(s => s.is_complete).length
-  const now = new Date()
-  const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate()
-  const monthAdherence = Math.round((monthComplete / daysInMonth) * 100)
-
-  const todayDone = todaySession.reduce((acc, s) => acc + (s.completed_count ?? 0), 0)
-  const todayTotal = todaySession.reduce((acc, s) => acc + (s.total_exercises ?? 0), 0)
-  const todayPct = todayTotal > 0 ? Math.round((todayDone / todayTotal) * 100) : 0
+  // Métricas
+  const today            = getLocalDateString()
+  const weeklyComplete   = sessionsThisWeek.filter(s => s.is_complete).length
+  const weeklyTarget     = gamification?.weekly_target_sessions ?? 0
+  const weeklyPct        = weeklyTarget > 0 ? Math.min(100, Math.round((weeklyComplete / weeklyTarget) * 100)) : 0
+  const monthComplete    = sessionsThisMonth.filter(s => s.is_complete).length
+  const daysInMonth      = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()
+  const monthAdherence   = Math.round((monthComplete / daysInMonth) * 100)
+  const streak           = gamification?.streak_days ?? 0
+  const totalXP          = gamification?.total_xp ?? 0
+  const level            = gamification?.level ?? 1
   const hasActivityToday = todaySession.length > 0
 
-  const streak = gamification?.streak_days ?? 0
-  const totalXP = gamification?.total_xp ?? 0
-  const level = gamification?.level ?? 1
+  // Progresso do treino de hoje
+  const todaySessForTreino = treinoDoDia
+    ? todaySession.find(s => s.workout_id === treinoDoDia.id)
+    : null
+  const totalEx   = treinoDoDia?.workout_exercises?.length ?? 0
+  const doneEx    = todaySessForTreino?.completed_count ?? 0
+  const pctHoje   = totalEx > 0 ? Math.round((doneEx / totalEx) * 100) : 0
+  const doneHoje  = todaySessForTreino?.is_complete ?? false
 
   if (loading) {
     return (
-      <div className="rounded-2xl border border-border bg-gradient-to-br from-emerald-50 to-blue-50 dark:from-emerald-950/30 dark:to-blue-950/30 p-5 flex items-center justify-center min-h-[180px]">
-        <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+      <div className="space-y-4">
+        <div className="rounded-2xl border bg-muted/30 animate-pulse h-40" />
+        <div className="rounded-xl border bg-muted/30 animate-pulse h-28" />
       </div>
     )
   }
 
   return (
-    <>
-      {/* Bloco de progresso motivador — dados com data local */}
+    <div className="space-y-5">
+
+      {/* ── Treino de hoje ────────────────────────────────────────────── */}
+      {!hasActivePlan ? (
+        <Card>
+          <CardContent className="py-12 text-center space-y-2">
+            <Dumbbell className="w-10 h-10 text-muted-foreground/40 mx-auto" />
+            <p className="text-muted-foreground font-medium">Nenhum plano ativo ainda.</p>
+            <p className="text-sm text-muted-foreground">Seu profissional enviará um plano em breve.</p>
+            <Link
+              href="/cliente/treinos"
+              className="inline-flex items-center gap-1.5 text-sm text-primary font-medium mt-1 hover:opacity-80"
+            >
+              Ver meus treinos <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </CardContent>
+        </Card>
+      ) : hojeDescanso ? (
+        <Card>
+          <CardContent className="p-5 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0">
+              <MoonStar className="w-6 h-6 text-slate-500" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">Hoje</p>
+              <p className="text-lg font-bold text-foreground">Dia de descanso</p>
+              {proximoTreino && (
+                <p className="text-sm text-muted-foreground mt-0.5">
+                  Próximo treino: <span className="font-medium text-foreground">Treino {proximoTreino.label}</span>
+                  {' '}({DIAS_LABEL[proximoTreino.dow]})
+                </p>
+              )}
+            </div>
+            <Link
+              href="/cliente/treinos"
+              className="text-xs text-primary font-medium hover:opacity-80 flex items-center gap-1 flex-shrink-0"
+            >
+              Ver plano <ArrowRight className="w-3 h-3" />
+            </Link>
+          </CardContent>
+        </Card>
+      ) : treinoDoDia ? (
+        <Card className={doneHoje
+          ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20'
+          : 'border-primary/20 bg-primary/5'
+        }>
+          <CardContent className="p-5 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-lg flex-shrink-0 ${
+                  doneHoje
+                    ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-primary/15 text-primary'
+                }`}>
+                  {doneHoje ? <CheckCircle2 className="w-6 h-6" /> : treinoDoDia.label}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Treino de hoje
+                  </p>
+                  <p className="text-base font-bold text-foreground truncate">{treinoDoDia.name}</p>
+                </div>
+              </div>
+              {doneHoje ? (
+                <Badge className="bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border-0 flex-shrink-0">
+                  Concluído ✓
+                </Badge>
+              ) : (
+                <span className="text-sm font-bold text-primary flex-shrink-0">{pctHoje}%</span>
+              )}
+            </div>
+
+            {/* Barra de progresso */}
+            {totalEx > 0 && (
+              <div>
+                <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
+                  <span>{doneEx} de {totalEx} exercícios</span>
+                  {!doneHoje && <span>Faltam {totalEx - doneEx}</span>}
+                </div>
+                <div className="w-full bg-muted rounded-full h-2">
+                  <div
+                    className={`h-2 rounded-full transition-all duration-500 ${
+                      doneHoje
+                        ? 'bg-gradient-to-r from-emerald-500 to-emerald-400'
+                        : 'bg-gradient-to-r from-primary to-primary/70'
+                    }`}
+                    style={{ width: `${pctHoje}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
+            <Link
+              href="/cliente/treinos"
+              className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-90 ${
+                doneHoje
+                  ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-primary text-primary-foreground'
+              }`}
+            >
+              {doneHoje ? 'Ver treino completo' : 'Ir para o treino de hoje'}
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {/* ── Métricas de evolução ──────────────────────────────────────── */}
       {(gamification || hasActivityToday) && (
         <div className="bg-gradient-to-br from-emerald-50 to-blue-50 dark:from-emerald-950/30 dark:to-blue-950/30 border border-emerald-100 dark:border-emerald-900/50 rounded-2xl p-5 space-y-4">
           <div className="flex items-center justify-between">
@@ -120,41 +280,17 @@ export function ClienteEvolucaoBlock({
             </Link>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-white/70 dark:bg-card/60 rounded-xl p-3 col-span-2 sm:col-span-2">
-              <div className="flex items-center justify-between mb-2">
-                <span className="text-xs text-muted-foreground font-medium">Treino de hoje</span>
-                {hasActivityToday ? (
-                  <span className="text-xs font-bold text-foreground">{todayPct}%</span>
-                ) : (
-                  <span className="text-xs text-muted-foreground">Não iniciado</span>
-                )}
-              </div>
-              <div className="w-full bg-muted rounded-full h-2 mb-1">
-                <div
-                  className={`h-2 rounded-full transition-all duration-500 ${
-                    todayPct === 100
-                      ? 'bg-gradient-to-r from-emerald-500 to-emerald-400'
-                      : 'bg-gradient-to-r from-blue-500 to-blue-400'
-                  }`}
-                  style={{ width: `${todayPct}%` }}
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {hasActivityToday
-                  ? `${todayDone} de ${todayTotal} exercícios`
-                  : 'Vamos começar?'}
-              </p>
-            </div>
-
+          <div className="grid grid-cols-2 gap-3">
             <div className="bg-white/70 dark:bg-card/60 rounded-xl p-3">
               <div className="flex items-center gap-1.5 mb-1">
                 <Dumbbell className="w-3.5 h-3.5 text-blue-500" />
                 <span className="text-xs text-muted-foreground">Esta semana</span>
               </div>
-              <p className="text-2xl font-bold text-foreground">{weeklyComplete}</p>
+              <p className="text-2xl font-bold text-foreground">
+                {weeklyTarget > 0 ? `${weeklyComplete}/${weeklyTarget}` : weeklyComplete}
+              </p>
               <p className="text-xs text-muted-foreground">
-                {weeklyComplete === 1 ? 'treino feito' : 'treinos feitos'}
+                {weeklyTarget > 0 ? `${weeklyPct}% da meta` : weeklyComplete === 1 ? 'treino' : 'treinos'}
               </p>
             </div>
 
@@ -168,7 +304,7 @@ export function ClienteEvolucaoBlock({
             </div>
           </div>
 
-          <div className="flex items-center gap-4 pt-1 flex-wrap">
+          <div className="flex items-center gap-4 flex-wrap">
             {streak > 0 && (
               <div className="flex items-center gap-1.5">
                 <Flame className="w-4 h-4 text-orange-500" />
@@ -198,73 +334,57 @@ export function ClienteEvolucaoBlock({
         </div>
       )}
 
-      {/* Treinos recentes — usa todaySession com data local */}
-      {totalTreinos > 0 && (
+      {/* ── Dietas ativas ─────────────────────────────────────────────── */}
+      {dietas.length > 0 && (
         <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base font-semibold">Meus Treinos</CardTitle>
+          <CardContent className="p-5">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2">
+                <Utensils className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span className="text-sm font-semibold text-foreground">Minha Dieta</span>
+              </div>
               <Link
-                href="/cliente/treinos"
+                href="/cliente/dietas"
                 className="text-xs text-primary hover:opacity-90 font-medium flex items-center gap-1"
               >
-                Ver todos <ArrowRight className="w-3 h-3" />
+                Ver dieta <ArrowRight className="w-3 h-3" />
               </Link>
             </div>
-          </CardHeader>
-          <CardContent className="pt-0">
             <ul className="divide-y divide-border">
-              {treinos.map((treino: any) => {
-                const todaySess = todaySession.find(s => s.workout_id === treino.id)
-                const exTotal = treino.workout_exercises?.length ?? 0
-                const exDone = todaySess?.completed_count ?? 0
-                const pct = exTotal > 0 ? Math.round((exDone / exTotal) * 100) : 0
-
-                return (
-                  <li key={treino.id} className="py-3">
-                    <div className="flex items-center justify-between">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium text-foreground truncate">{treino.name}</p>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          {treino.profiles?.full_name && `Por ${treino.profiles.full_name} · `}
-                          {treino.sent_at && formatDate(treino.sent_at)}
-                        </p>
-                      </div>
-                      <Badge className="ml-3 flex-shrink-0 bg-blue-100 dark:bg-blue-900/60 text-blue-700 dark:text-blue-300 border-0 text-xs">
-                        {todaySess?.is_complete ? (
-                          <span className="flex items-center gap-1">
-                            <CheckCircle2 className="w-3 h-3" /> Feito hoje
-                          </span>
-                        ) : (
-                          'Ativo'
-                        )}
-                      </Badge>
-                    </div>
-                    {exTotal > 0 && (
-                      <div className="mt-2">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="text-xs text-muted-foreground">
-                            Hoje: {exDone}/{exTotal} exercícios
-                          </span>
-                          <span className="text-xs font-medium text-foreground">{pct}%</span>
-                        </div>
-                        <div className="w-full bg-muted rounded-full h-1.5">
-                          <div
-                            className={`h-1.5 rounded-full transition-all duration-500 ${
-                              pct === 100 ? 'bg-emerald-500' : 'bg-blue-400'
-                            }`}
-                            style={{ width: `${pct}%` }}
-                          />
-                        </div>
-                      </div>
+              {dietas.map((dieta: any) => (
+                <li key={dieta.id} className="flex items-center justify-between py-2.5">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-foreground truncate">{dieta.name}</p>
+                    {dieta.profiles?.full_name && (
+                      <p className="text-xs text-muted-foreground mt-0.5">
+                        Por {dieta.profiles.full_name}
+                        {dieta.sent_at ? ` · ${formatDate(dieta.sent_at)}` : ''}
+                      </p>
                     )}
-                  </li>
-                )
-              })}
+                  </div>
+                  <Badge className="ml-3 flex-shrink-0 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border-0 text-xs">
+                    Ativo
+                  </Badge>
+                </li>
+              ))}
             </ul>
           </CardContent>
         </Card>
       )}
-    </>
+
+      {/* ── Estado zero: sem plano ────────────────────────────────────── */}
+      {!hasActivePlan && dietas.length === 0 && (
+        <div className="flex flex-col items-center gap-3 py-10 text-center">
+          <CalendarDays className="w-10 h-10 text-muted-foreground/40" />
+          <div>
+            <p className="text-muted-foreground font-medium">Nenhum plano disponível ainda.</p>
+            <p className="text-sm text-muted-foreground mt-1">
+              Seus planos aparecerão aqui quando o profissional enviá-los.
+            </p>
+          </div>
+        </div>
+      )}
+
+    </div>
   )
 }

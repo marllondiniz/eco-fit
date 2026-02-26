@@ -4,7 +4,9 @@ import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
+import { translateAuthError } from '@/lib/auth-errors'
 import AuthLayout from '@/components/AuthLayout'
+import type { ProfessionalType } from '@/types/database'
 
 function CriarContaForm() {
   const searchParams = useSearchParams()
@@ -19,6 +21,7 @@ function CriarContaForm() {
   const [validandoToken, setValidandoToken] = useState(false)
   const [tokenValido, setTokenValido] = useState<boolean | null>(null)
   const [roleConvite, setRoleConvite] = useState<string | null>(null)
+  const [tipoProfConvite, setTipoProfConvite] = useState<ProfessionalType | null>(null)
   const [erro, setErro] = useState<string | null>(null)
   const [sucesso, setSucesso] = useState(false)
 
@@ -28,7 +31,7 @@ function CriarContaForm() {
       setValidandoToken(true)
       const { data, error } = await supabase
         .from('invitations')
-        .select('email, role, used_at, expires_at')
+        .select('email, role, professional_type, used_at, expires_at')
         .eq('token', token)
         .single()
 
@@ -55,6 +58,7 @@ function CriarContaForm() {
       setTokenValido(true)
       setEmail(data.email)
       setRoleConvite(data.role)
+      setTipoProfConvite((data as any).professional_type ?? null)
       setValidandoToken(false)
     }
 
@@ -85,11 +89,7 @@ function CriarContaForm() {
     })
 
     if (signUpError) {
-      setErro(
-        signUpError.message === 'User already registered'
-          ? 'Este e-mail já está cadastrado. Faça login ou use "Esqueceu a senha?".'
-          : signUpError.message
-      )
+      setErro(translateAuthError(signUpError.message))
       setCarregando(false)
       return
     }
@@ -98,7 +98,10 @@ function CriarContaForm() {
     if (token && tokenValido && signUpData.user && roleConvite) {
       await supabase
         .from('profiles')
-        .update({ role: roleConvite })
+        .update({
+          role: roleConvite,
+          professional_type: tipoProfConvite ?? 'both',
+        })
         .eq('id', signUpData.user.id)
 
       await supabase
@@ -164,7 +167,15 @@ function CriarContaForm() {
       titulo={token && tokenValido ? 'Aceitar convite' : 'Criar conta'}
       subtitulo={
         token && tokenValido
-          ? `Você foi convidado como ${roleConvite === 'personal' ? 'profissional' : roleConvite}. Preencha seus dados.`
+          ? `Você foi convidado como ${
+              roleConvite === 'personal'
+                ? tipoProfConvite === 'nutritionist'
+                  ? 'nutricionista'
+                  : tipoProfConvite === 'personal'
+                    ? 'personal trainer'
+                    : 'profissional (personal + nutricionista)'
+                : roleConvite
+            }. Preencha seus dados.`
           : 'Preencha os dados abaixo para se cadastrar'
       }
     >

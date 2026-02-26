@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect, use } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -10,15 +10,12 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import {
-  Plus, Trash2, ChevronLeft, Send, Calendar, Dumbbell,
-  User, Info, Sparkles, Loader2, ChevronsUpDown, Save,
-} from 'lucide-react'
+import { Plus, Trash2, ChevronLeft, Send, Calendar, Dumbbell, User, Info, Sparkles, Loader2, ChevronsUpDown } from 'lucide-react'
 import Link from 'next/link'
 import { AnamnesePanel } from '@/components/AnamnesePanel'
 import { ExerciseCombobox } from '@/components/ExerciseCombobox'
 
-// ─── Constantes (idênticas à plano/page.tsx) ─────────────────────────────────
+// ─── Constantes ───────────────────────────────────────────────────────────────
 
 const DIAS = [
   { key: 'mon', label: 'Seg' },
@@ -43,8 +40,8 @@ const DIVISION_DISPLAY: Record<string, string> = {
 }
 
 const DEFAULT_SCHEDULES: Record<string, Record<string, string | null>> = {
-  'A/B':     { mon: 'A', tue: 'B', wed: null, thu: 'A', fri: 'B', sat: null,  sun: null },
-  'A/B/C':   { mon: 'A', tue: 'B', wed: 'C',  thu: 'A', fri: 'B', sat: 'C',  sun: null },
+  'A/B':     { mon: 'A', tue: 'B', wed: null, thu: 'A', fri: 'B', sat: null, sun: null },
+  'A/B/C':   { mon: 'A', tue: 'B', wed: 'C', thu: 'A', fri: 'B', sat: 'C', sun: null },
   'FullBody': { mon: 'A', tue: null, wed: 'A', thu: null, fri: 'A', sat: null, sun: null },
 }
 
@@ -57,20 +54,18 @@ const LABEL_COLORS: Record<string, string> = {
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
 interface Exercicio {
-  id: string          // UUID do DB ou gerado localmente
-  dbId: string | null // UUID real do DB (null = novo exercício)
+  id: string
   name: string
   sets: string
   reps: string
   rest_seconds: string
   notes: string
-  alt_name: string
-  alt_notes: string
-  showAlt: boolean
+  alt_name: string   // exercício alternativo (opcional)
+  alt_notes: string  // observação da alternativa
+  showAlt: boolean   // controle UI
 }
 
 interface WorkoutData {
-  dbId: string | null  // UUID real do workout no DB (null = novo)
   label: string
   name: string
   methodology: string
@@ -81,16 +76,11 @@ interface WorkoutData {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function novoEx(): Exercicio {
-  return {
-    id: Math.random().toString(36).slice(2),
-    dbId: null,
-    name: '', sets: '', reps: '', rest_seconds: '', notes: '',
-    alt_name: '', alt_notes: '', showAlt: false,
-  }
+  return { id: Math.random().toString(36).slice(2), name: '', sets: '', reps: '', rest_seconds: '', notes: '', alt_name: '', alt_notes: '', showAlt: false }
 }
 
 function novoWorkout(label: string): WorkoutData {
-  return { dbId: null, label, name: `Treino ${label}`, methodology: '', notes: '', exercises: [novoEx()] }
+  return { label, name: `Treino ${label}`, methodology: '', notes: '', exercises: [novoEx()] }
 }
 
 function calcEndDate(startDate: string, weeks: number): string {
@@ -103,130 +93,50 @@ function formatBR(iso: string) {
   return new Date(iso + 'T12:00:00').toLocaleDateString('pt-BR', { day: '2-digit', month: 'short', year: 'numeric' })
 }
 
-function inferDivision(labels: string[]): string {
-  const sorted = [...new Set(labels)].sort().join('/')
-  if (sorted === 'A/B/C') return 'A/B/C'
-  if (sorted === 'A/B')   return 'A/B'
-  return 'FullBody'
-}
+// ─── Página ───────────────────────────────────────────────────────────────────
 
-// ─── Componente principal ─────────────────────────────────────────────────────
-
-export default function EditarPlanoPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params)
+function PlanoForm() {
   const router = useRouter()
+  const params = useSearchParams()
+  const clienteId  = params?.get('clientId')  ?? ''
+  const requestId  = params?.get('requestId') ?? ''
 
-  const [loading,    setLoading]    = useState(true)
-  const [saving,     setSaving]     = useState(false)
-  const [gerandoIA,  setGerandoIA]  = useState(false)
-  const [erro,       setErro]       = useState<string | null>(null)
-  const [erroIA,     setErroIA]     = useState<string | null>(null)
-
-  const [clienteId,   setClienteId]   = useState('')
   const [clienteName, setClienteName] = useState('')
+  const [loadingClient, setLoadingClient] = useState(true)
+  const [sending, setSending] = useState(false)
+  const [erro, setErro] = useState<string | null>(null)
+  const [gerandoIA, setGerandoIA] = useState(false)
+  const [erroIA, setErroIA] = useState<string | null>(null)
 
-  // Configuração do plano
+  // Config do plano
   const today = new Date().toISOString().slice(0, 10)
   const [startDate,     setStartDate]     = useState(today)
   const [durationWeeks, setDurationWeeks] = useState('4')
   const [divisionType,  setDivisionType]  = useState('A/B/C')
-  const [schedule,      setSchedule]      = useState<Record<string, string | null>>(DEFAULT_SCHEDULES['A/B/C'])
-  const [workouts,      setWorkouts]      = useState<WorkoutData[]>([])
 
-  // ── Carregamento dos dados existentes ────────────────────────────────────────
+  // Grade semanal
+  const [schedule, setSchedule] = useState<Record<string, string | null>>(DEFAULT_SCHEDULES['A/B/C'])
 
+  // Treinos (um por label)
+  const [workouts, setWorkouts] = useState<WorkoutData[]>([
+    novoWorkout('A'), novoWorkout('B'), novoWorkout('C'),
+  ])
+
+  // Carregar nome do cliente
   useEffect(() => {
-    async function load() {
-      // 1. Carrega o treino clicado
-      const { data: treino } = await supabase
-        .from('workouts')
-        .select('*, workout_exercises(*)')
-        .eq('id', id)
-        .single()
-
-      if (!treino) { router.push('/profissional/treinos'); return }
-
-      const cid = treino.client_id ?? ''
-      setClienteId(cid)
-      setStartDate(treino.start_date ?? today)
-      setDurationWeeks(String(treino.duration_weeks ?? 4))
-
-      // 2. Busca todos os treinos irmãos (mesmo cliente + mesmo período)
-      let siblings: any[] = [treino]
-      if (cid && treino.start_date && treino.end_date) {
-        const { data: others } = await supabase
-          .from('workouts')
-          .select('*, workout_exercises(*)')
-          .eq('client_id', cid)
-          .eq('start_date', treino.start_date)
-          .eq('end_date', treino.end_date)
-          .eq('status', 'sent')
-        if (others && others.length > 0) siblings = others
-      }
-
-      // 3. Detecta divisão
-      const labels = siblings.map((s: any) => s.label).filter(Boolean)
-      const div = inferDivision(labels)
-      setDivisionType(div)
-
-      // 4. Monta os workouts
-      const allLabels = DIVISION_LABELS[div] ?? ['A']
-      const wdList: WorkoutData[] = allLabels.map(lbl => {
-        const sib = siblings.find((s: any) => s.label === lbl)
-        if (!sib) return novoWorkout(lbl)
-        const exs = (sib.workout_exercises ?? [])
-          .sort((a: any, b: any) => a.order_index - b.order_index)
-          .map((e: any) => ({
-            id:           e.id,
-            dbId:         e.id,
-            name:         e.name         ?? '',
-            sets:         e.sets         != null ? String(e.sets)         : '',
-            reps:         e.reps         ?? '',
-            rest_seconds: e.rest_seconds != null ? String(e.rest_seconds) : '',
-            notes:        e.notes        ?? '',
-            alt_name:     e.alternative_name  ?? '',
-            alt_notes:    e.alternative_notes ?? '',
-            showAlt:      !!(e.alternative_name),
-          }))
-        return {
-          dbId:        sib.id,
-          label:       lbl,
-          name:        sib.name        ?? `Treino ${lbl}`,
-          methodology: sib.methodology ?? '',
-          notes:       sib.notes       ?? '',
-          exercises:   exs.length ? exs : [novoEx()],
-        }
+    if (!clienteId) { setLoadingClient(false); return }
+    supabase
+      .from('profiles')
+      .select('full_name, email')
+      .eq('id', clienteId)
+      .maybeSingle()
+      .then(({ data }) => {
+        setClienteName(data?.full_name ?? data?.email ?? 'Cliente')
+        setLoadingClient(false)
       })
-      setWorkouts(wdList)
+  }, [clienteId])
 
-      // 5. Carrega grade semanal
-      if (cid) {
-        const { data: schedRows } = await supabase
-          .from('client_workout_schedule')
-          .select('day_of_week, workout_label')
-          .eq('client_id', cid)
-        const sMap: Record<string, string | null> = {}
-        for (const d of DIAS) sMap[d.key] = null
-        for (const row of schedRows ?? []) sMap[row.day_of_week] = row.workout_label ?? null
-        setSchedule(sMap)
-      }
-
-      // 6. Nome do cliente
-      if (cid) {
-        const { data: prof } = await supabase
-          .from('profiles')
-          .select('full_name, email')
-          .eq('id', cid)
-          .maybeSingle()
-        setClienteName(prof?.full_name ?? prof?.email ?? 'Cliente')
-      }
-
-      setLoading(false)
-    }
-    load()
-  }, [id, router, today])
-
-  // ── Handlers (idênticos à plano/page.tsx) ────────────────────────────────────
+  // ── Handlers ────────────────────────────────────────────────────────────────
 
   function changeDivision(div: string) {
     setDivisionType(div)
@@ -248,8 +158,9 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
   }
 
   function removeEx(wIdx: number, eIdx: number) {
-    setWorkouts(prev => prev.map((w, i) => i !== wIdx ? w
-      : { ...w, exercises: w.exercises.filter((_, j) => j !== eIdx) }
+    setWorkouts(prev => prev.map((w, i) => i === wIdx
+      ? { ...w, exercises: w.exercises.filter((_, j) => j !== eIdx) }
+      : w
     ))
   }
 
@@ -260,7 +171,7 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
     }))
   }
 
-  function updateEx(wIdx: number, eIdx: number, field: keyof Omit<Exercicio, 'id' | 'dbId'>, value: string) {
+  function updateEx(wIdx: number, eIdx: number, field: keyof Omit<Exercicio, 'id'>, value: string) {
     setWorkouts(prev => prev.map((w, i) => i !== wIdx ? w : {
       ...w,
       exercises: w.exercises.map((e, j) => j !== eIdx ? e : { ...e, [field]: value }),
@@ -274,9 +185,18 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
     setGerandoIA(true)
     setErroIA(null)
 
+    // Buscar dados da anamnese para enriquecer o prompt
     const [{ data: profile }, { data: anamnese }] = await Promise.all([
-      supabase.from('client_profiles').select('goal, activity_level, training_experience, age, sex').eq('user_id', clienteId).maybeSingle(),
-      supabase.from('client_anamnese').select('injuries, diseases, training_location, weekly_availability, notes').eq('user_id', clienteId).maybeSingle(),
+      supabase
+        .from('client_profiles')
+        .select('goal, activity_level, training_experience, age, sex')
+        .eq('user_id', clienteId)
+        .maybeSingle(),
+      supabase
+        .from('client_anamnese')
+        .select('injuries, diseases, training_location, weekly_availability, notes')
+        .eq('user_id', clienteId)
+        .maybeSingle(),
     ])
 
     const GOAL_PT: Record<string, string> = {
@@ -289,7 +209,8 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
       intense: 'Avançado', athlete: 'Atleta',
     }
 
-    const restricoes = [anamnese?.injuries, anamnese?.diseases].filter(Boolean).join('; ') || 'Nenhuma'
+    const restricoes = [anamnese?.injuries, anamnese?.diseases]
+      .filter(Boolean).join('; ') || 'Nenhuma'
 
     try {
       const res = await fetch('/api/ai/plano-treino', {
@@ -308,20 +229,25 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
       })
 
       const data = await res.json()
-      if (!res.ok) { setErroIA(data.error ?? 'Erro ao gerar com IA.'); return }
+      if (!res.ok) {
+        setErroIA(data.error ?? 'Erro ao gerar com IA.')
+        return
+      }
 
-      const aiWorkouts: any[] = data.workouts ?? []
-      if (!aiWorkouts.length) { setErroIA('A IA não retornou treinos. Tente novamente.'); return }
+      const aiWorkouts: { label: string; name: string; methodology: string; notes: string; exercises: { name: string; sets: number; reps: string; rest_seconds: number; notes: string }[] }[] = data.workouts ?? []
 
-      setWorkouts(aiWorkouts.map((w, i) => ({
-        dbId:        workouts[i]?.dbId ?? null,
+      if (!aiWorkouts.length) {
+        setErroIA('A IA não retornou treinos. Tente novamente.')
+        return
+      }
+
+      setWorkouts(aiWorkouts.map(w => ({
         label:       w.label,
         name:        w.name        || `Treino ${w.label}`,
         methodology: w.methodology || '',
         notes:       w.notes       || '',
-        exercises:   (w.exercises ?? []).map((e: any) => ({
+        exercises:   (w.exercises ?? []).map(e => ({
           id:           Math.random().toString(36).slice(2),
-          dbId:         null,
           name:         e.name         || '',
           sets:         e.sets         ? String(e.sets)         : '',
           reps:         e.reps         ? String(e.reps)         : '',
@@ -339,82 +265,59 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
     }
   }
 
-  // ── Salvar (update) ──────────────────────────────────────────────────────────
+  // ── Submit ───────────────────────────────────────────────────────────────────
 
-  async function handleSalvar() {
+  async function handleEnviar() {
+    if (!clienteId) return setErro('Cliente não identificado.')
     const hasExercises = workouts.some(w => w.exercises.some(e => e.name.trim()))
-    if (!hasExercises) return setErro('Adicione pelo menos um exercício antes de salvar.')
+    if (!hasExercises) return setErro('Adicione pelo menos um exercício antes de enviar.')
 
-    setSaving(true)
+    setSending(true)
     setErro(null)
 
     const { data: { user } } = await supabase.auth.getUser()
-    if (!user) { setSaving(false); return }
+    if (!user) { setSending(false); return }
 
     const durNum  = parseInt(durationWeeks, 10)
     const endDate = calcEndDate(startDate, durNum)
     const now     = new Date().toISOString()
 
     try {
-      // 1. Atualizar ou criar workouts
+      // 1. Criar cada treino + exercícios
       for (const workout of workouts) {
-        let workoutDbId = workout.dbId
+        const { data: wRow, error: wErr } = await supabase
+          .from('workouts')
+          .insert({
+            professional_id: user.id,
+            client_id:       clienteId,
+            name:            workout.name.trim() || `Treino ${workout.label}`,
+            division:        divisionType,
+            methodology:     workout.methodology.trim() || null,
+            notes:           workout.notes.trim() || null,
+            label:           workout.label,
+            day_of_week:     null,
+            status:          'sent',
+            sent_at:         now,
+            start_date:      startDate,
+            end_date:        endDate,
+            duration_weeks:  durNum,
+          })
+          .select('id')
+          .single()
 
-        if (workoutDbId) {
-          // Atualiza workout existente
-          const { error: wErr } = await supabase
-            .from('workouts')
-            .update({
-              name:           workout.name.trim() || `Treino ${workout.label}`,
-              division:       divisionType,
-              methodology:    workout.methodology.trim() || null,
-              notes:          workout.notes.trim() || null,
-              start_date:     startDate,
-              end_date:       endDate,
-              duration_weeks: durNum,
-              label:          workout.label,
-            })
-            .eq('id', workoutDbId)
-          if (wErr) throw new Error(`Erro ao atualizar Treino ${workout.label}: ${wErr.message}`)
-        } else {
-          // Cria novo workout (divisão expandida)
-          const { data: wRow, error: wErr } = await supabase
-            .from('workouts')
-            .insert({
-              professional_id: user.id,
-              client_id:       clienteId,
-              name:            workout.name.trim() || `Treino ${workout.label}`,
-              division:        divisionType,
-              methodology:     workout.methodology.trim() || null,
-              notes:           workout.notes.trim() || null,
-              label:           workout.label,
-              day_of_week:     null,
-              status:          'sent',
-              sent_at:         now,
-              start_date:      startDate,
-              end_date:        endDate,
-              duration_weeks:  durNum,
-            })
-            .select('id')
-            .single()
-          if (wErr || !wRow) throw new Error(`Erro ao criar Treino ${workout.label}: ${wErr?.message}`)
-          workoutDbId = wRow.id
-        }
-
-        // 2. Substitui exercícios (delete + reinsert)
-        await supabase.from('workout_exercises').delete().eq('workout_id', workoutDbId)
+        if (wErr || !wRow) throw new Error(`Erro ao criar Treino ${workout.label}: ${wErr?.message}`)
 
         const exRows = workout.exercises
           .filter(e => e.name.trim())
           .map((e, idx) => ({
-            workout_id:        workoutDbId!,
+            workout_id:        wRow.id,
             division_label:    workout.label,
             name:              e.name.trim(),
-            sets:              e.sets         ? parseInt(e.sets, 10)         : null,
-            reps:              e.reps.trim()  || null,
+            sets:              e.sets ? parseInt(e.sets, 10) : null,
+            reps:              e.reps.trim() || null,
             rest_seconds:      e.rest_seconds ? parseInt(e.rest_seconds, 10) : null,
             notes:             e.notes.trim() || null,
-            alternative_name:  e.alt_name.trim()  || null,
+            alternative_name:  e.alt_name.trim() || null,
             alternative_notes: e.alt_notes.trim() || null,
             order_index:       idx,
           }))
@@ -425,7 +328,7 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
         }
       }
 
-      // 3. Atualiza grade semanal
+      // 2. Salvar grade semanal
       const scheduleRows = DIAS.map(d => ({
         client_id:     clienteId,
         day_of_week:   d.key,
@@ -436,26 +339,37 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
         .upsert(scheduleRows, { onConflict: 'client_id,day_of_week' })
       if (schedErr) throw new Error(`Erro ao salvar grade: ${schedErr.message}`)
 
+      // 3. Marcar solicitação como concluída
+      if (requestId) {
+        await supabase
+          .from('plan_requests')
+          .update({ status: 'completed' })
+          .eq('id', requestId)
+      }
+
       router.push('/profissional/treinos')
     } catch (err: unknown) {
-      setErro(err instanceof Error ? err.message : 'Erro ao salvar plano.')
-      setSaving(false)
+      setErro(err instanceof Error ? err.message : 'Erro ao enviar plano.')
+      setSending(false)
     }
   }
 
   // ── Render ───────────────────────────────────────────────────────────────────
 
-  if (loading) {
+  if (!clienteId) {
     return (
-      <div className="flex items-center justify-center py-24">
-        <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+      <div className="text-center py-16">
+        <p className="text-muted-foreground mb-4">Nenhum cliente selecionado.</p>
+        <Link href="/profissional/treinos">
+          <Button variant="outline">← Voltar para Treinos</Button>
+        </Link>
       </div>
     )
   }
 
-  const durNum      = parseInt(durationWeeks, 10)
-  const endDate     = calcEndDate(startDate, durNum)
-  const labels      = DIVISION_LABELS[divisionType] ?? ['A']
+  const durNum    = parseInt(durationWeeks, 10)
+  const endDate   = calcEndDate(startDate, durNum)
+  const labels    = DIVISION_LABELS[divisionType] ?? ['A']
   const trainingDays = Object.values(schedule).filter(Boolean).length
 
   return (
@@ -470,16 +384,16 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
           </Button>
         </Link>
         <div>
-          <h2 className="text-2xl font-bold text-foreground">Editar Plano de Treino</h2>
+          <h2 className="text-2xl font-bold text-foreground">Criar Plano de Treino</h2>
           <p className="text-sm text-muted-foreground mt-0.5 flex items-center gap-1.5">
             <User className="w-3.5 h-3.5" />
-            {clienteName}
+            {loadingClient ? 'Carregando...' : clienteName}
           </p>
         </div>
       </div>
 
-      {/* ── Anamnese ── */}
-      {clienteId && <AnamnesePanel clienteId={clienteId} />}
+      {/* ── Anamnese do cliente ── */}
+      <AnamnesePanel clienteId={clienteId} />
 
       {/* ── Configuração do plano ── */}
       <Card>
@@ -541,12 +455,12 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
             </span>
           </div>
 
-          {/* Gerar com IA */}
+          {/* Ação: gerar com IA */}
           <div className="flex items-center justify-between gap-4 pt-1 border-t border-border">
             <div>
               <p className="text-sm font-medium text-foreground">Preencher treinos com IA</p>
               <p className="text-xs text-muted-foreground mt-0.5">
-                A IA substitui os exercícios atuais por uma nova sugestão baseada na anamnese — rascunho editável.
+                A IA cria os exercícios baseada na anamnese do cliente — rascunho editável, nunca enviado automaticamente.
               </p>
             </div>
             <Button
@@ -555,13 +469,15 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
               disabled={gerandoIA}
               className="gap-2 bg-violet-600 hover:bg-violet-700 text-white flex-shrink-0"
             >
-              {gerandoIA
-                ? <><Loader2 className="w-4 h-4 animate-spin" /> Gerando…</>
-                : <><Sparkles className="w-4 h-4" /> Gerar com IA</>
-              }
+              {gerandoIA ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Gerando…</>
+              ) : (
+                <><Sparkles className="w-4 h-4" /> Gerar com IA</>
+              )}
             </Button>
           </div>
 
+          {/* Erro da IA */}
           {erroIA && (
             <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/50 border border-red-100 dark:border-red-800 rounded-lg px-4 py-2.5">
               {erroIA}
@@ -570,7 +486,7 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
         </CardContent>
       </Card>
 
-      {/* ── Agenda Semanal ── */}
+      {/* ── Agenda semanal ── */}
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center gap-2">
@@ -625,7 +541,7 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
           </CardHeader>
           <CardContent className="space-y-5">
 
-            {/* Campos gerais */}
+            {/* Campos gerais do treino */}
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="space-y-1.5">
                 <Label className="text-sm">Nome</Label>
@@ -674,7 +590,7 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
                 </Button>
               </div>
 
-              {/* Cabeçalho colunas */}
+              {/* Cabeçalho das colunas */}
               <div className="hidden sm:grid grid-cols-12 gap-2 px-1">
                 <span className="col-span-5 text-xs text-muted-foreground">Exercício</span>
                 <span className="col-span-2 text-xs text-muted-foreground text-center">Séries</span>
@@ -778,25 +694,35 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
       {/* ── Botões finais ── */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2 border-t border-border">
         <p className="text-xs text-muted-foreground order-2 sm:order-1">
-          As alterações serão aplicadas imediatamente ao plano ativo do cliente.
+          O plano será enviado diretamente ao cliente com status <strong>Ativo</strong>.
         </p>
         <div className="flex gap-3 order-1 sm:order-2 w-full sm:w-auto">
           <Link href="/profissional/treinos" className="flex-1 sm:flex-none">
             <Button variant="outline" className="w-full">Cancelar</Button>
           </Link>
           <Button
-            onClick={handleSalvar}
-            disabled={saving}
+            onClick={handleEnviar}
+            disabled={sending}
             className="flex-1 sm:flex-none gap-2 bg-emerald-600 hover:bg-emerald-700 text-white min-w-[160px]"
           >
-            {saving
-              ? <><Loader2 className="w-4 h-4 animate-spin" /> Salvando…</>
-              : <><Save className="w-4 h-4" /> Salvar Plano</>
-            }
+            <Send className="w-4 h-4" />
+            {sending ? 'Enviando plano…' : 'Enviar Plano'}
           </Button>
         </div>
       </div>
 
     </div>
+  )
+}
+
+export default function PlanoTreinoPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex items-center justify-center py-24">
+        <div className="w-8 h-8 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+      </div>
+    }>
+      <PlanoForm />
+    </Suspense>
   )
 }

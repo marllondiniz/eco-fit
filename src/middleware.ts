@@ -41,6 +41,24 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL('/', request.url))
   }
 
+  // Bloqueio de onboarding para clientes: se perfil ainda não concluído,
+  // força a ir para /cliente/perfil até que complete e confirme a anamnese.
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role, onboarding_completed')
+    .eq('id', user.id)
+    .maybeSingle()
+
+  if (
+    profile?.role === 'user' &&
+    profile.onboarding_completed === false &&
+    !pathname.startsWith('/cliente/perfil')
+  ) {
+    const url = new URL('/cliente/perfil', request.url)
+    url.searchParams.set('onboarding', '1')
+    return NextResponse.redirect(url)
+  }
+
   // Demais rotas: deixam passar. /dashboard em si faz o redirect por role.
   return response
 }

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -34,9 +34,11 @@ const emptyExercise = (): Exercicio => ({
 
 const DIVISOES_SUGERIDAS = ['A', 'B', 'C', 'D', 'Full Body', 'Superior', 'Inferior', 'Push', 'Pull', 'Legs']
 const OBJETIVOS_TREINO = ['Hipertrofia', 'Emagrecimento', 'Resistência', 'Força', 'Condicionamento', 'Reabilitação']
+const ROTULOS_TREINO = ['A', 'B', 'C'] as const
 
 export default function NovoTreinoPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [saving, setSaving] = useState(false)
   const [gerandoIA, setGerandoIA] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
@@ -45,6 +47,7 @@ export default function NovoTreinoPage() {
 
   const [clienteId, setClienteId] = useState('')
   const [nome, setNome] = useState('')
+  const [label, setLabel] = useState<string>('')
   const [divisao, setDivisao] = useState('')
   const [objetivo, setObjetivo] = useState('')
   const [metodologia, setMetodologia] = useState('')
@@ -64,7 +67,18 @@ export default function NovoTreinoPage() {
     fetchClientes()
   }, [])
 
+  useEffect(() => {
+    const cid = searchParams?.get('clientId') ?? ''
+    const lbl = searchParams?.get('label') ?? ''
+    if (cid) setClienteId(cid)
+    if (lbl && ['A', 'B', 'C'].includes(lbl)) setLabel(lbl)
+  }, [searchParams])
+
   async function gerarComIA() {
+    if (!label) {
+      setErro('Selecione o rótulo (A/B/C) para usar a IA.')
+      return
+    }
     setGerandoIA(true)
     setErro(null)
     const clienteSelecionado = clientes.find(c => c.id === clienteId)
@@ -73,9 +87,9 @@ export default function NovoTreinoPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          divisaoAtual: label,
           objetivo,
           clienteNome: clienteSelecionado?.full_name ?? '',
-          divisao,
           observacoes,
           numExercicios: 9,
         }),
@@ -85,14 +99,12 @@ export default function NovoTreinoPage() {
         setErro(data.error ?? 'Erro ao gerar treino com IA.')
         return
       }
-      if (data.nome) setNome(data.nome)
-      if (data.divisao && !divisao) setDivisao(data.divisao)
       if (data.metodologia) setMetodologia(data.metodologia)
       if (data.observacoes) setObservacoes(data.observacoes)
       if (data.exercicios?.length) {
         setExercicios(
           data.exercicios.map((e: any) => ({
-            division_label: e.division_label ?? '',
+            division_label: label,
             name: e.name ?? '',
             sets: e.sets != null ? String(e.sets) : '',
             reps: e.reps != null ? String(e.reps) : '',
@@ -130,6 +142,8 @@ export default function NovoTreinoPage() {
         professional_id: user.id,
         client_id: clienteId || null,
         name: nome.trim(),
+        day_of_week: null,
+        label: label || null,
         division: divisao.trim() || null,
         methodology: metodologia.trim() || null,
         notes: observacoes.trim() || null,
@@ -161,7 +175,13 @@ export default function NovoTreinoPage() {
     await supabase.from('workout_exercises').insert(exerciciosToInsert)
 
     setSaving(false)
-    router.push(status === 'review' ? '/profissional/supervisao' : '/profissional/treinos')
+    if (status === 'review') {
+      router.push('/profissional/supervisao')
+    } else if (clienteId) {
+      router.push(`/profissional/treinos/grade?clientId=${clienteId}`)
+    } else {
+      router.push('/profissional/treinos')
+    }
   }
 
   return (
@@ -178,12 +198,15 @@ export default function NovoTreinoPage() {
       <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
         <div>
           <h2 className="text-2xl font-bold text-foreground">Novo Treino</h2>
-          <p className="text-muted-foreground mt-1 text-sm">Monte o plano de treino e sua metodologia.</p>
+          <p className="text-muted-foreground mt-1 text-sm">
+            Monte a estrutura do treino: exercícios, metodologia e observações. A distribuição nos dias da semana é feita na Grade A/B/C.
+          </p>
         </div>
         <Button
           type="button"
           onClick={gerarComIA}
-          disabled={gerandoIA}
+          disabled={gerandoIA || !label}
+          title={!label ? 'Selecione o rótulo (A/B/C) para usar a IA' : undefined}
           className="gap-2 bg-violet-600 hover:bg-violet-700 text-white shadow-sm self-start sm:flex-shrink-0"
         >
           {gerandoIA ? (
@@ -200,7 +223,7 @@ export default function NovoTreinoPage() {
       {/* Informações gerais */}
       <Card>
         <CardHeader className="pb-4">
-          <CardTitle className="text-base">Informações do Plano</CardTitle>
+          <CardTitle className="text-base">Estrutura do Treino</CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
           {/* Cliente */}
@@ -228,7 +251,7 @@ export default function NovoTreinoPage() {
                 id="nome"
                 value={nome}
                 onChange={e => setNome(e.target.value)}
-                placeholder="Ex: Hipertrofia A/B/C — João"
+                placeholder="Ex: Hipertrofia Superior"
               />
             </div>
             <div className="space-y-1.5">
@@ -246,19 +269,37 @@ export default function NovoTreinoPage() {
             </div>
           </div>
 
-          <div className="space-y-1.5">
-            <Label htmlFor="divisao">Divisão de treino</Label>
-            <div className="flex gap-2">
-              <Input
-                id="divisao"
-                value={divisao}
-                onChange={e => setDivisao(e.target.value)}
-                placeholder="Ex: A/B/C, Full Body..."
-                list="divisoes"
-              />
-              <datalist id="divisoes">
-                {DIVISOES_SUGERIDAS.map(d => <option key={d} value={d} />)}
-              </datalist>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="space-y-1.5">
+              <Label>Rótulo (A/B/C)</Label>
+              <p className="text-xs text-muted-foreground">Identifica qual treino do plano este é.</p>
+              <Select value={label || 'none'} onValueChange={v => setLabel(v === 'none' ? '' : v)}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecionar rótulo" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">Nenhum</SelectItem>
+                  {ROTULOS_TREINO.map(r => (
+                    <SelectItem key={r} value={r}>Treino {r}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="divisao">Divisão muscular</Label>
+              <p className="text-xs text-muted-foreground">Grupos musculares focados neste treino.</p>
+              <div className="flex gap-2">
+                <Input
+                  id="divisao"
+                  value={divisao}
+                  onChange={e => setDivisao(e.target.value)}
+                  placeholder="Ex: Superior, Push, Full Body..."
+                  list="divisoes"
+                />
+                <datalist id="divisoes">
+                  {DIVISOES_SUGERIDAS.map(d => <option key={d} value={d} />)}
+                </datalist>
+              </div>
             </div>
           </div>
 
