@@ -22,7 +22,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog'
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { UserCheck, Plus, Copy, CheckCircle, Clock, Mail, XCircle, Trash2 } from 'lucide-react'
+import { UserCheck, Plus, CheckCircle, Clock, Mail, XCircle, Trash2, RefreshCw, Send } from 'lucide-react'
 import { formatDate, formatDistanceToNow } from '@/lib/date-utils'
 import type { Profile, Invitation, ProfessionalType } from '@/types/database'
 
@@ -34,10 +34,10 @@ export default function ProfissionaisPage() {
   const [emailConvite, setEmailConvite] = useState('')
   const [tipoConvite, setTipoConvite] = useState<ProfessionalType>('personal')
   const [enviando, setEnviando] = useState(false)
-  const [novoLink, setNovoLink] = useState<string | null>(null)
-  const [copiado, setCopiado] = useState(false)
+  const [conviteEnviado, setConviteEnviado] = useState(false)  // sucesso final
+  const [emailEnviadoId, setEmailEnviadoId] = useState<string | null>(null) // id do convite recem enviado
+  const [reenviadoId, setReenviadoId] = useState<string | null>(null)
   const [erro, setErro] = useState<string | null>(null)
-  const [emailEnviado, setEmailEnviado] = useState(false)
 
   async function load() {
     const [{ data: profs }, { data: invs }] = await Promise.all([
@@ -59,12 +59,24 @@ export default function ProfissionaisPage() {
 
   useEffect(() => { load() }, [])
 
+  async function enviarEmailConvite(invitationId: string, invitedByName: string): Promise<boolean> {
+    try {
+      const res = await fetch('/api/auth/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invitationId, invitedByName }),
+      })
+      return res.ok
+    } catch {
+      return false
+    }
+  }
+
   async function handleConvidar() {
     if (!emailConvite.trim()) {
       setErro('Informe o e-mail do profissional.')
       return
     }
-
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
     if (!emailRegex.test(emailConvite.trim())) {
       setErro('E-mail inválido.')
@@ -91,45 +103,33 @@ export default function ProfissionaisPage() {
       setEnviando(false)
       setErro(
         error.code === '23505'
-          ? 'Já existe um convite para este e-mail.'
+          ? 'Já existe um convite pendente para este e-mail.'
           : 'Erro ao criar convite.'
       )
       return
     }
 
-    const link = `${window.location.origin}/criar-conta?token=${data.token}`
-    setNovoLink(link)
-
-    // Busca nome do admin para o e-mail
+    // Busca nome do admin e envia e-mail automaticamente
     const { data: adminProfile } = await supabase
-      .from('profiles')
-      .select('full_name')
-      .eq('id', user!.id)
-      .maybeSingle()
+      .from('profiles').select('full_name').eq('id', user!.id).maybeSingle()
 
-    // Envia e-mail de convite via Resend
-    try {
-      const emailRes = await fetch('/api/auth/invite', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          invitationId:   data.id,
-          invitedByName:  adminProfile?.full_name ?? 'LB.FIT',
-        }),
-      })
-      setEmailEnviado(emailRes.ok)
-    } catch {
-      setEmailEnviado(false)
-    }
+    const ok = await enviarEmailConvite(data.id, adminProfile?.full_name ?? 'LB.FIT')
+
+    setConviteEnviado(ok)
+    setEmailEnviadoId(data.id)
+    if (!ok) setErro('Convite criado, mas houve erro ao enviar o e-mail. Verifique RESEND_API_KEY.')
 
     setEnviando(false)
     await load()
   }
 
-  async function handleCopiar(link: string) {
-    await navigator.clipboard.writeText(link)
-    setCopiado(true)
-    setTimeout(() => setCopiado(false), 2000)
+  async function handleReenviar(conviteId: string) {
+    setReenviadoId(conviteId)
+    const { data: { user } } = await supabase.auth.getUser()
+    const { data: adminProfile } = await supabase
+      .from('profiles').select('full_name').eq('id', user!.id).maybeSingle()
+    await enviarEmailConvite(conviteId, adminProfile?.full_name ?? 'LB.FIT')
+    setTimeout(() => setReenviadoId(null), 2500)
   }
 
   async function handleCancelarConvite(id: string) {
@@ -164,7 +164,8 @@ export default function ProfissionaisPage() {
     setModalOpen(false)
     setEmailConvite('')
     setTipoConvite('personal')
-    setNovoLink(null)
+    setConviteEnviado(false)
+    setEmailEnviadoId(null)
     setErro(null)
   }
 
@@ -288,7 +289,7 @@ export default function ProfissionaisPage() {
                               : 'Personal + Nutricionista'}
                         </p>
                       </div>
-                      <div className="flex items-center gap-2 flex-shrink-0">
+                      <div className="flex items-center gap-1.5 flex-shrink-0 flex-wrap justify-end">
                         {expirado ? (
                           <Badge variant="secondary" className="text-xs text-red-500">Expirado</Badge>
                         ) : (
@@ -297,15 +298,21 @@ export default function ProfissionaisPage() {
                             Pendente
                           </Badge>
                         )}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="text-xs gap-1"
-                          onClick={() => handleCopiar(link)}
-                        >
-                          <Copy className="w-3.5 h-3.5" />
-                          Copiar link
-                        </Button>
+                        {!expirado && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs gap-1 text-blue-600 dark:text-blue-400 hover:text-blue-700"
+                            disabled={reenviadoId === convite.id}
+                            onClick={() => handleReenviar(convite.id)}
+                          >
+                            {reenviadoId === convite.id ? (
+                              <><CheckCircle className="w-3.5 h-3.5" /> Enviado!</>
+                            ) : (
+                              <><RefreshCw className="w-3.5 h-3.5" /> Reenviar</>
+                            )}
+                          </Button>
+                        )}
                         {!expirado && (
                           <Button
                             variant="ghost"
@@ -342,43 +349,29 @@ export default function ProfissionaisPage() {
             <DialogTitle>Convidar profissional</DialogTitle>
           </DialogHeader>
 
-          {novoLink ? (
-            <div className="space-y-4 py-2">
-              <div className="flex items-center gap-2 text-emerald-600">
-                <CheckCircle className="w-5 h-5 flex-shrink-0" />
-                <p className="text-sm font-medium">Convite criado com sucesso!</p>
+          {conviteEnviado ? (
+            /* ── Tela de sucesso ── */
+            <div className="space-y-4 py-4 text-center">
+              <div className="w-16 h-16 rounded-full bg-emerald-100 dark:bg-emerald-900/40 flex items-center justify-center mx-auto">
+                <Mail className="w-8 h-8 text-emerald-600 dark:text-emerald-400" />
               </div>
-              {emailEnviado && (
-                <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-800 rounded-xl px-4 py-2.5">
-                  <Mail className="w-4 h-4 flex-shrink-0" />
-                  E-mail de convite enviado pelo LB.FIT.
-                </div>
-              )}
-              <div className="bg-muted rounded-xl p-4">
-                <p className="text-xs text-muted-foreground mb-2 font-medium">Link de convite</p>
-                <p className="text-xs text-foreground break-all font-mono">{novoLink}</p>
+              <div>
+                <p className="font-semibold text-foreground">Convite enviado!</p>
+                <p className="text-sm text-muted-foreground mt-1">
+                  Um e-mail foi enviado para <strong className="text-foreground">{emailConvite}</strong> com o link de acesso ao LB.FIT.
+                </p>
               </div>
-              <p className="text-xs text-muted-foreground">
-                {emailEnviado
-                  ? 'O convite foi enviado por e-mail. Você também pode copiar o link abaixo.'
-                  : 'Envie este link para o profissional. Ele expira em 7 dias.'}
-              </p>
-              <Button
-                onClick={() => handleCopiar(novoLink)}
-                className="w-full gap-2"
-                variant={copiado ? 'outline' : 'default'}
-              >
-                {copiado ? (
-                  <><CheckCircle className="w-4 h-4" /> Link copiado!</>
-                ) : (
-                  <><Copy className="w-4 h-4" /> Copiar link</>
-                )}
-              </Button>
+              <div className="bg-muted/60 rounded-xl px-4 py-3 text-xs text-muted-foreground text-left space-y-1">
+                <p>✅ E-mail enviado por: <strong>LB.FIT</strong></p>
+                <p>⏱ Convite válido por 7 dias</p>
+                <p>🔒 Acesso criado apenas ao clicar no link</p>
+              </div>
             </div>
           ) : (
+            /* ── Formulário ── */
             <div className="space-y-4 py-2">
               <p className="text-sm text-muted-foreground">
-                Informe o e-mail do profissional. Um link de cadastro será gerado para ele.
+                Informe o e-mail e o tipo. O convite será enviado automaticamente por e-mail.
               </p>
               <div className="space-y-1.5">
                 <Label htmlFor="email-convite">E-mail do profissional</Label>
@@ -401,37 +394,47 @@ export default function ProfissionaisPage() {
                     <SelectValue placeholder="Selecione o tipo" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="personal">Personal</SelectItem>
+                    <SelectItem value="personal">Personal Trainer</SelectItem>
                     <SelectItem value="nutritionist">Nutricionista</SelectItem>
                     <SelectItem value="both">Ambos (personal + nutricionista)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
               {erro && (
-                <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/50 border border-red-100 dark:border-red-800 rounded-lg px-3 py-2">
                   {erro}
                 </p>
               )}
             </div>
           )}
 
-          {!novoLink && (
-            <DialogFooter className="gap-2">
-              <Button variant="outline" onClick={fecharModal}>Cancelar</Button>
-              <Button
-                onClick={handleConvidar}
-                disabled={enviando}
-                className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
-              >
-                {enviando ? 'Gerando...' : 'Gerar link de convite'}
-              </Button>
-            </DialogFooter>
-          )}
-          {novoLink && (
-            <DialogFooter>
-              <Button variant="outline" onClick={fecharModal} className="w-full">Fechar</Button>
-            </DialogFooter>
-          )}
+          <DialogFooter className="gap-2">
+            {conviteEnviado ? (
+              <>
+                <Button variant="outline" onClick={() => { setConviteEnviado(false); setEmailConvite(''); setEmailEnviadoId(null) }} className="flex-1">
+                  Convidar outro
+                </Button>
+                <Button onClick={fecharModal} className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white">
+                  Concluir
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button variant="outline" onClick={fecharModal}>Cancelar</Button>
+                <Button
+                  onClick={handleConvidar}
+                  disabled={enviando}
+                  className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
+                >
+                  {enviando ? (
+                    <><div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Enviando…</>
+                  ) : (
+                    <><Send className="w-4 h-4" /> Enviar convite</>
+                  )}
+                </Button>
+              </>
+            )}
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
