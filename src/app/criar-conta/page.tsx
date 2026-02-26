@@ -124,12 +124,32 @@ function CriarContaForm() {
     )
   }
 
-  if (token && tokenValido === false) {
+  // Sem token → acesso direto bloqueado
+  if (!token) {
+    return (
+      <AuthLayout titulo="Acesso restrito" subtitulo="O cadastro é exclusivo via convite.">
+        <div className="space-y-4 text-center">
+          <p className="text-sm text-muted-foreground">
+            Para criar uma conta no LB.FIT você precisa receber um convite de um administrador ou profissional.
+          </p>
+          <Link
+            href="/"
+            className="inline-block w-full py-3 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 transition-colors text-center text-sm"
+          >
+            Ir para o login
+          </Link>
+        </div>
+      </AuthLayout>
+    )
+  }
+
+  // Token inválido / expirado / já usado
+  if (tokenValido === false) {
     return (
       <AuthLayout titulo="Convite inválido" subtitulo="Não foi possível utilizar este convite.">
         <div className="space-y-4 text-center">
           <p className="text-sm text-muted-foreground">
-            {erro ?? 'O link de convite é inválido ou não existe.'}
+            {erro ?? 'O link de convite é inválido, expirou ou já foi utilizado.'}
           </p>
           <Link
             href="/"
@@ -164,20 +184,16 @@ function CriarContaForm() {
 
   return (
     <AuthLayout
-      titulo={token && tokenValido ? 'Aceitar convite' : 'Criar conta'}
-      subtitulo={
-        token && tokenValido
-          ? `Você foi convidado como ${
-              roleConvite === 'personal'
-                ? tipoProfConvite === 'nutritionist'
-                  ? 'nutricionista'
-                  : tipoProfConvite === 'personal'
-                    ? 'personal trainer'
-                    : 'profissional (personal + nutricionista)'
-                : roleConvite
-            }. Preencha seus dados.`
-          : 'Preencha os dados abaixo para se cadastrar'
-      }
+      titulo="Aceitar convite"
+      subtitulo={`Você foi convidado como ${
+        roleConvite === 'personal'
+          ? tipoProfConvite === 'nutritionist'
+            ? 'nutricionista'
+            : tipoProfConvite === 'personal'
+              ? 'personal trainer'
+              : 'profissional (personal + nutricionista)'
+          : 'cliente'
+      }. Preencha seus dados.`}
     >
       <form onSubmit={handleSubmit} className="space-y-5">
         <div>
@@ -267,18 +283,16 @@ function CriarContaForm() {
           disabled={carregando}
           className="w-full py-3.5 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2 transition-colors shadow-lg shadow-emerald-600/25 disabled:opacity-70 disabled:cursor-not-allowed"
         >
-          {carregando ? 'Criando conta...' : 'Criar conta'}
+          {carregando ? 'Criando conta...' : 'Aceitar convite e criar conta'}
         </button>
       </form>
 
-      {!token && (
-        <p className="mt-6 text-center text-sm text-muted-foreground">
-          Já tem conta?{' '}
-          <Link href="/" className="font-semibold text-primary hover:opacity-90">
-            Entrar
-          </Link>
-        </p>
-      )}
+      <p className="mt-6 text-center text-sm text-muted-foreground">
+        Já tem conta?{' '}
+        <Link href="/" className="font-semibold text-primary hover:opacity-90">
+          Entrar
+        </Link>
+      </p>
     </AuthLayout>
   )
 }

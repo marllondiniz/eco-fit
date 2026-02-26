@@ -37,6 +37,7 @@ export default function ProfissionaisPage() {
   const [novoLink, setNovoLink] = useState<string | null>(null)
   const [copiado, setCopiado] = useState(false)
   const [erro, setErro] = useState<string | null>(null)
+  const [emailEnviado, setEmailEnviado] = useState(false)
 
   async function load() {
     const [{ data: profs }, { data: invs }] = await Promise.all([
@@ -86,9 +87,8 @@ export default function ProfissionaisPage() {
       .select()
       .single()
 
-    setEnviando(false)
-
     if (error) {
+      setEnviando(false)
       setErro(
         error.code === '23505'
           ? 'Já existe um convite para este e-mail.'
@@ -99,6 +99,30 @@ export default function ProfissionaisPage() {
 
     const link = `${window.location.origin}/criar-conta?token=${data.token}`
     setNovoLink(link)
+
+    // Busca nome do admin para o e-mail
+    const { data: adminProfile } = await supabase
+      .from('profiles')
+      .select('full_name')
+      .eq('id', user!.id)
+      .maybeSingle()
+
+    // Envia e-mail de convite via Resend
+    try {
+      const emailRes = await fetch('/api/auth/invite', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          invitationId:   data.id,
+          invitedByName:  adminProfile?.full_name ?? 'LB.FIT',
+        }),
+      })
+      setEmailEnviado(emailRes.ok)
+    } catch {
+      setEmailEnviado(false)
+    }
+
+    setEnviando(false)
     await load()
   }
 
@@ -324,12 +348,20 @@ export default function ProfissionaisPage() {
                 <CheckCircle className="w-5 h-5 flex-shrink-0" />
                 <p className="text-sm font-medium">Convite criado com sucesso!</p>
               </div>
+              {emailEnviado && (
+                <div className="flex items-center gap-2 text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-950/40 border border-blue-100 dark:border-blue-800 rounded-xl px-4 py-2.5">
+                  <Mail className="w-4 h-4 flex-shrink-0" />
+                  E-mail de convite enviado pelo LB.FIT.
+                </div>
+              )}
               <div className="bg-muted rounded-xl p-4">
                 <p className="text-xs text-muted-foreground mb-2 font-medium">Link de convite</p>
                 <p className="text-xs text-foreground break-all font-mono">{novoLink}</p>
               </div>
               <p className="text-xs text-muted-foreground">
-                Envie este link para o profissional. Ele expira em 7 dias.
+                {emailEnviado
+                  ? 'O convite foi enviado por e-mail. Você também pode copiar o link abaixo.'
+                  : 'Envie este link para o profissional. Ele expira em 7 dias.'}
               </p>
               <Button
                 onClick={() => handleCopiar(novoLink)}

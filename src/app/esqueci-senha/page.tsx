@@ -2,8 +2,6 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { supabase } from '@/lib/supabase'
-import { translateAuthError } from '@/lib/auth-errors'
 import AuthLayout from '@/components/AuthLayout'
 
 export default function EsqueceuSenha() {
@@ -16,14 +14,27 @@ export default function EsqueceuSenha() {
     e.preventDefault()
     setErro(null)
     setCarregando(true)
-    const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${typeof window !== 'undefined' ? window.location.origin : ''}/redefinir-senha`,
-    })
-    setCarregando(false)
-    if (error) {
-      setErro(translateAuthError(error.message))
+
+    // Usa a API interna que envia o e-mail via Resend com template LB.FIT
+    try {
+      const res = await fetch('/api/auth/reset-password', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ email: email.trim().toLowerCase() }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        setErro(data.error ?? 'Erro ao enviar e-mail.')
+        setCarregando(false)
+        return
+      }
+    } catch {
+      setErro('Erro de conexão. Tente novamente.')
+      setCarregando(false)
       return
     }
+
+    setCarregando(false)
     setEnviado(true)
   }
 

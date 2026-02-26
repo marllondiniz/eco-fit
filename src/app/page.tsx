@@ -128,13 +128,7 @@ export default function Login() {
       </form>
 
       <p className="mt-6 text-center text-sm text-muted-foreground">
-        Ainda não tem conta?{' '}
-        <Link
-          href="/criar-conta"
-          className="font-semibold text-primary hover:opacity-90"
-        >
-          Criar conta
-        </Link>
+        Acesso exclusivo via convite.
       </p>
     </AuthLayout>
   )
