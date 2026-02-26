@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Confirme sua conta - ECOFIT</title>
+</head>
+<body style="margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f0fdf4;">
+  <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color: #f0fdf4; padding: 40px 20px;">
+    <tr>
+      <td align="center">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width: 480px; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 24px rgba(0,0,0,0.08); overflow: hidden;">
+          <!-- Header -->
+          <tr>
+            <td style="background: linear-gradient(135deg, #047857 0%, #0d9488 100%); padding: 32px 40px; text-align: center;">
+              <h1 style="margin: 0; color: #ffffff; font-size: 28px; font-weight: 700; letter-spacing: -0.5px;">ECOFIT</h1>
+              <p style="margin: 8px 0 0; color: rgba(255,255,255,0.9); font-size: 14px;">Saúde e sustentabilidade</p>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding: 40px;">
+              <h2 style="margin: 0 0 16px; color: #0f172a; font-size: 22px; font-weight: 600;">Confirme sua conta</h2>
+              <p style="margin: 0 0 24px; color: #475569; font-size: 16px; line-height: 1.6;">
+                Olá! Você criou uma conta no ECOFIT com o e-mail <strong style="color: #0f172a;">{{ .Email }}</strong>.
+              </p>
+              <p style="margin: 0 0 28px; color: #475569; font-size: 16px; line-height: 1.6;">
+                Clique no botão abaixo para ativar sua conta e começar a usar o app.
+              </p>
+              <table role="presentation" width="100%" cellspacing="0" cellpadding="0">
+                <tr>
+                  <td align="center">
+                    <a href="{{ .ConfirmationURL }}" style="display: inline-block; padding: 16px 40px; background: linear-gradient(135deg, #059669 0%, #0d9488 100%); color: #ffffff; font-size: 16px; font-weight: 600; text-decoration: none; border-radius: 12px; box-shadow: 0 4px 14px rgba(5, 150, 105, 0.35);">
+                      Confirmar e-mail
+                    </a>
+                  </td>
+                </tr>
+              </table>
+              <p style="margin: 28px 0 0; color: #94a3b8; font-size: 13px; line-height: 1.5;">
+                Se você não criou esta conta, ignore este e-mail. O link expira em 24 horas.
+              </p>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding: 24px 40px; background-color: #f8fafc; border-top: 1px solid #e2e8f0;">
+              <p style="margin: 0; color: #64748b; font-size: 12px; text-align: center;">
+                © ECOFIT — Saúde e sustentabilidade
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
