@@ -44,7 +44,7 @@ export async function POST(req: NextRequest) {
       expiresHours:   Math.max(hoursUntilExpiry, 1),
     })
 
-    const { error: sendErr } = await resend.emails.send({
+    const { data: sendData, error: sendErr } = await resend.emails.send({
       from:    FROM,
       to:      invitation.email,
       subject: template.subject,
@@ -52,13 +52,17 @@ export async function POST(req: NextRequest) {
     })
 
     if (sendErr) {
-      console.error('[invite] Resend error:', sendErr)
-      return NextResponse.json({ error: 'Erro ao enviar e-mail.' }, { status: 500 })
+      console.error('[invite] Resend error:', JSON.stringify(sendErr))
+      return NextResponse.json(
+        { error: 'Erro ao enviar e-mail.', detail: sendErr },
+        { status: 500 }
+      )
     }
 
+    console.log('[invite] E-mail enviado com sucesso. ID:', sendData?.id)
     return NextResponse.json({ ok: true })
   } catch (err) {
     console.error('[invite] Unexpected error:', err)
-    return NextResponse.json({ error: 'Erro interno.' }, { status: 500 })
+    return NextResponse.json({ error: 'Erro interno.', detail: String(err) }, { status: 500 })
   }
 }
