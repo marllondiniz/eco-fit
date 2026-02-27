@@ -80,15 +80,19 @@ function CriarContaForm() {
 
     setCarregando(true)
 
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://lbfit.app'
+
     const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
       email,
       password: senha,
       options: {
         data: { full_name: nome },
+        emailRedirectTo: `${appUrl}/`,
       },
     })
 
     if (signUpError) {
+      console.error('[signUp] error:', signUpError)
       setErro(translateAuthError(signUpError.message))
       setCarregando(false)
       return
