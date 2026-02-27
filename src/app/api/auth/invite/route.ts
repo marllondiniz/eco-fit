@@ -9,11 +9,11 @@ const supabaseAdmin = createClient(
   { auth: { autoRefreshToken: false, persistSession: false } }
 )
 
-const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://lb.fit'
+const APP_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://lbfit.app'
 
 export async function POST(req: NextRequest) {
   const resend = new Resend(process.env.RESEND_API_KEY)
-  const FROM   = process.env.FROM_EMAIL ?? 'LB.FIT <no-reply@lb.fit>'
+  const FROM   = process.env.FROM_EMAIL ?? 'LB.FIT <no-reply@lbfit.app>'
   try {
     const { invitationId, invitedByName } = await req.json()
 

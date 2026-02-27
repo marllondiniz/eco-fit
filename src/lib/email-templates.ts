@@ -1,7 +1,7 @@
 // Templates de e-mail HTML para LB.FIT
 // Identidade visual: verde #16a34a, fundo escuro, tipografia limpa
 
-const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://lb.fit'
+const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://lbfit.app'
 
 function baseHtml(title: string, preview: string, body: string): string {
   return `<!DOCTYPE html>
