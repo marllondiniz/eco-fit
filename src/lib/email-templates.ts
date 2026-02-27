@@ -4,6 +4,8 @@
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL ?? 'https://lbfit.app'
 
 function baseHtml(title: string, preview: string, body: string): string {
+  const logoUrl = `${BASE_URL}/logo-branco.png`
+
   return `<!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -12,21 +14,19 @@ function baseHtml(title: string, preview: string, body: string): string {
   <title>${title}</title>
   <meta name="description" content="${preview}" />
 </head>
-<body style="margin:0;padding:0;background:#0f0f0f;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
-  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f0f0f;min-height:100vh;padding:40px 16px;">
+<body style="margin:0;padding:0;background:#0f0f0f;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Arial,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#0f0f0f;padding:48px 16px;">
     <tr>
       <td align="center">
-        <table width="100%" style="max-width:520px;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;">
 
           <!-- Logo -->
           <tr>
-            <td align="center" style="padding-bottom:32px;">
-              <div style="display:inline-flex;align-items:center;gap:10px;">
-                <div style="width:40px;height:40px;background:#16a34a;border-radius:10px;display:flex;align-items:center;justify-content:center;">
-                  <span style="color:#fff;font-weight:800;font-size:18px;font-family:sans-serif;line-height:1;display:block;text-align:center;padding-top:10px;">L</span>
-                </div>
-                <span style="color:#ffffff;font-size:22px;font-weight:800;letter-spacing:-0.5px;">LB<span style="color:#16a34a;">.FIT</span></span>
-              </div>
+            <td align="center" style="padding-bottom:36px;">
+              <a href="${BASE_URL}" style="text-decoration:none;display:inline-block;">
+                <img src="${logoUrl}" alt="LB.FIT" width="120" height="auto"
+                     style="display:block;border:0;height:auto;max-width:120px;" />
+              </a>
             </td>
           </tr>
 
@@ -40,9 +40,9 @@ function baseHtml(title: string, preview: string, body: string): string {
           <!-- Footer -->
           <tr>
             <td align="center" style="padding-top:28px;">
-              <p style="color:#555;font-size:12px;margin:0;line-height:1.6;">
+              <p style="color:#444444;font-size:12px;margin:0;line-height:1.7;font-family:Arial,sans-serif;">
                 © ${new Date().getFullYear()} LB.FIT · Todos os direitos reservados<br/>
-                <span style="color:#444;">Você recebeu este e-mail por ser parte da plataforma LB.FIT.</span>
+                <span style="color:#3a3a3a;">Você recebeu este e-mail por ser parte da plataforma LB.FIT.</span>
               </p>
             </td>
           </tr>
@@ -58,49 +58,55 @@ function baseHtml(title: string, preview: string, body: string): string {
 // ─── Template: Convite ────────────────────────────────────────────────────────
 
 export function emailConvite({
-  nomeConvidado,
-  nomeConvidante,
   role,
   inviteUrl,
-  expiresHours = 48,
+  expiresHours = 168,
 }: {
-  nomeConvidado: string | null
-  nomeConvidante: string
+  nomeConvidado?: string | null
+  nomeConvidante?: string
   role: 'user' | 'personal'
   inviteUrl: string
   expiresHours?: number
 }) {
   const roleLabel = role === 'personal' ? 'profissional' : 'cliente'
-  const saudacao = nomeConvidado ? `Olá, ${nomeConvidado}!` : 'Olá!'
 
   const body = `
     <div style="padding:40px 36px;">
-      <p style="color:#16a34a;font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin:0 0 16px;">Convite LB.FIT</p>
-      <h1 style="color:#ffffff;font-size:24px;font-weight:800;margin:0 0 12px;line-height:1.3;">
+      <p style="color:#16a34a;font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin:0 0 18px;font-family:Arial,sans-serif;">
+        Convite LB.FIT
+      </p>
+      <h1 style="color:#ffffff;font-size:26px;font-weight:800;margin:0 0 14px;line-height:1.3;font-family:Arial,sans-serif;">
         Você foi convidado para o LB.FIT
       </h1>
-      <p style="color:#aaa;font-size:15px;line-height:1.7;margin:0 0 28px;">
-        ${saudacao} <strong style="color:#fff;">${nomeConvidante}</strong> convidou você para ingressar como <strong style="color:#16a34a;">${roleLabel}</strong> na plataforma LB.FIT — sua plataforma de acompanhamento de treino e nutrição.
+      <p style="color:#aaaaaa;font-size:15px;line-height:1.75;margin:0 0 32px;font-family:Arial,sans-serif;">
+        Olá! Você recebeu um convite para ingressar como <strong style="color:#16a34a;">${roleLabel}</strong> na plataforma <strong style="color:#ffffff;">LB.FIT</strong> — sua plataforma de acompanhamento de treino e nutrição.
       </p>
 
-      <div style="background:#111;border:1px solid #2a2a2a;border-radius:12px;padding:20px 24px;margin-bottom:28px;">
-        <p style="color:#555;font-size:12px;margin:0 0 6px;text-transform:uppercase;letter-spacing:1px;">Link de acesso</p>
-        <p style="color:#aaa;font-size:12px;margin:0;word-break:break-all;">${inviteUrl}</p>
-      </div>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:28px;">
+        <tr>
+          <td align="center">
+            <a href="${inviteUrl}"
+               style="display:inline-block;background:#16a34a;color:#ffffff;text-decoration:none;font-weight:700;font-size:16px;padding:16px 40px;border-radius:12px;font-family:Arial,sans-serif;letter-spacing:0.2px;">
+              Aceitar convite e criar conta
+            </a>
+          </td>
+        </tr>
+      </table>
 
-      <a href="${inviteUrl}" style="display:block;background:#16a34a;color:#fff;text-decoration:none;font-weight:700;font-size:15px;padding:15px 24px;border-radius:12px;text-align:center;margin-bottom:24px;">
-        Aceitar convite e criar conta
-      </a>
+      <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:16px;">
+        <tr><td style="border-top:1px solid #2a2a2a;"></td></tr>
+      </table>
 
-      <p style="color:#555;font-size:12px;margin:0;text-align:center;">
-        Este convite expira em ${expiresHours} horas. Se você não esperava este e-mail, pode ignorá-lo.
+      <p style="color:#555555;font-size:12px;margin:0;text-align:center;line-height:1.6;font-family:Arial,sans-serif;">
+        Este convite expira em <strong style="color:#666;">${expiresHours} horas</strong>.<br/>
+        Se você não esperava este e-mail, pode ignorá-lo com segurança.
       </p>
     </div>
   `
 
   return {
     subject: 'Você foi convidado para o LB.FIT',
-    html: baseHtml('Convite — LB.FIT', `${nomeConvidante} convidou você para o LB.FIT`, body),
+    html: baseHtml('Convite — LB.FIT', 'Aceite seu convite para acessar o LB.FIT', body),
   }
 }
 
