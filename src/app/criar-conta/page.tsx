@@ -2,14 +2,15 @@
 
 import { useState, useEffect, Suspense } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useSearchParams } from 'next/navigation'
 import { supabase } from '@/lib/supabase'
-import { translateAuthError } from '@/lib/auth-errors'
 import AuthLayout from '@/components/AuthLayout'
 import type { ProfessionalType } from '@/types/database'
 
 function CriarContaForm() {
   const searchParams = useSearchParams()
+  const router = useRouter()
   const token = searchParams?.get('token') ?? null
 
   const [email, setEmail] = useState('')
@@ -23,7 +24,6 @@ function CriarContaForm() {
   const [roleConvite, setRoleConvite] = useState<string | null>(null)
   const [tipoProfConvite, setTipoProfConvite] = useState<ProfessionalType | null>(null)
   const [erro, setErro] = useState<string | null>(null)
-  const [sucesso, setSucesso] = useState(false)
 
   useEffect(() => {
     if (!token) return
@@ -80,42 +80,39 @@ function CriarContaForm() {
 
     setCarregando(true)
 
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://lbfit.app'
-
-    const { data: signUpData, error: signUpError } = await supabase.auth.signUp({
-      email,
-      password: senha,
-      options: {
-        data: { full_name: nome },
-        emailRedirectTo: `${appUrl}/`,
-      },
+    // Cria conta via API server-side com e-mail já confirmado
+    const res = await fetch('/api/auth/create-account', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email,
+        password: senha,
+        fullName: nome,
+        token,
+        role: roleConvite,
+        professionalType: tipoProfConvite,
+      }),
     })
 
-    if (signUpError) {
-      console.error('[signUp] error:', signUpError)
-      setErro(translateAuthError(signUpError.message))
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      setErro(body.error ?? 'Erro ao criar conta. Tente novamente.')
       setCarregando(false)
       return
     }
 
-    // Se havia convite, atualizar role e marcar convite como usado
-    if (token && tokenValido && signUpData.user && roleConvite) {
-      await supabase
-        .from('profiles')
-        .update({
-          role: roleConvite,
-          professional_type: tipoProfConvite ?? 'both',
-        })
-        .eq('id', signUpData.user.id)
+    // Login automático — sem etapa de confirmação de e-mail
+    const { error: signInError } = await supabase.auth.signInWithPassword({ email, password: senha })
 
-      await supabase
-        .from('invitations')
-        .update({ used_at: new Date().toISOString() })
-        .eq('token', token)
+    if (signInError) {
+      setErro('Conta criada! Mas não foi possível entrar automaticamente. Faça login.')
+      setCarregando(false)
+      router.push('/')
+      return
     }
 
-    setCarregando(false)
-    setSucesso(true)
+    // Redireciona para o dashboard conforme o role
+    router.push('/dashboard')
   }
 
   if (validandoToken) {
@@ -160,26 +157,6 @@ function CriarContaForm() {
             className="inline-block w-full py-3 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 transition-colors text-center text-sm"
           >
             Voltar ao login
-          </Link>
-        </div>
-      </AuthLayout>
-    )
-  }
-
-  if (sucesso) {
-    return (
-      <AuthLayout titulo="Conta criada!" subtitulo="Verifique seu e-mail para confirmar o cadastro.">
-        <div className="space-y-4 text-center text-sm">
-          <p className="text-foreground">
-            Enviamos um link de confirmação para{' '}
-            <strong className="text-primary font-semibold">{email}</strong>.
-            Clique no link para ativar sua conta.
-          </p>
-          <Link
-            href="/"
-            className="inline-block w-full py-3 rounded-xl bg-emerald-600 text-white font-semibold hover:bg-emerald-700 transition-colors text-center"
-          >
-            Ir para o login
           </Link>
         </div>
       </AuthLayout>
