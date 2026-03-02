@@ -12,7 +12,7 @@ import {
   Activity,
 } from 'lucide-react'
 
-const CLIENT_NAV = [
+const CLIENT_NAV_FULL = [
   { label: 'Início',   href: '/cliente',          icon: LayoutDashboard, exact: true },
   { label: 'Dietas',   href: '/cliente/dietas',    icon: Utensils,        exact: false },
   { label: 'Treinos',  href: '/cliente/treinos',   icon: Dumbbell,        exact: false },
@@ -21,8 +21,13 @@ const CLIENT_NAV = [
   { label: 'Perfil',   href: '/cliente/perfil',    icon: UserCircle,      exact: false },
 ]
 
-export function BottomNav() {
+const CLIENT_NAV_ONBOARDING = [
+  { label: 'Perfil', href: '/cliente/perfil', icon: UserCircle, exact: false },
+]
+
+export function BottomNav({ onboardingComplete = true }: { onboardingComplete?: boolean }) {
   const pathname = usePathname()
+  const navItems = onboardingComplete ? CLIENT_NAV_FULL : CLIENT_NAV_ONBOARDING
 
   return (
     <nav
@@ -30,7 +35,7 @@ export function BottomNav() {
       style={{ paddingBottom: 'env(safe-area-inset-bottom)' }}
     >
       <div className="flex items-stretch h-16">
-        {CLIENT_NAV.map((item) => {
+        {navItems.map((item) => {
           const Icon = item.icon
           const isActive = item.exact
             ? pathname === item.href

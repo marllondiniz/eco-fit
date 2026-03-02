@@ -10,16 +10,18 @@ interface DashboardLayoutProps {
   email:      string | null
   avatarUrl?: string | null
   pageTitle?: string
+  /** Só para role=user: se false, oculta navegação para outras páginas até completar cadastro/anamnese */
+  onboardingComplete?: boolean
 }
 
-export function DashboardLayout({ children, role, name, email, avatarUrl, pageTitle }: DashboardLayoutProps) {
+export function DashboardLayout({ children, role, name, email, avatarUrl, pageTitle, onboardingComplete = true }: DashboardLayoutProps) {
   const isClient = role === 'user'
 
   return (
     <div className="flex h-screen bg-background overflow-hidden">
       {/* Desktop sidebar */}
       <div className="hidden md:flex w-60 flex-shrink-0 flex-col">
-        <Sidebar role={role} />
+        <Sidebar role={role} onboardingComplete={onboardingComplete} />
       </div>
 
       {/* Main content */}
@@ -36,7 +38,7 @@ export function DashboardLayout({ children, role, name, email, avatarUrl, pageTi
       </div>
 
       {/* Bottom nav — clients on mobile only */}
-      {isClient && <BottomNav />}
+      {isClient && <BottomNav onboardingComplete={onboardingComplete} />}
     </div>
   )
 }

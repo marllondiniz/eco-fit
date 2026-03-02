@@ -60,15 +60,22 @@ const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
 interface SidebarProps {
   role: UserRole
   onClose?: () => void
+  /** Só para role=user: se false, mostra apenas Perfil até completar cadastro/anamnese */
+  onboardingComplete?: boolean
 }
 
-export function Sidebar({ role, onClose }: SidebarProps) {
+export function Sidebar({ role, onClose, onboardingComplete = true }: SidebarProps) {
   const pathname = usePathname()
   const { profile } = useProfile()
   const profType: ProfessionalType | null =
     role === 'personal' ? (profile?.professional_type ?? 'both') : null
 
   let navItems = NAV_BY_ROLE[role] ?? NAV_BY_ROLE.user
+
+  // Cliente sem onboarding: apenas Perfil
+  if (role === 'user' && !onboardingComplete) {
+    navItems = [{ label: 'Perfil', href: '/cliente/perfil', icon: UserCircle }]
+  }
 
   // Para profissionais, filtramos Dietas/Treinos conforme o tipo
   if (role === 'personal') {

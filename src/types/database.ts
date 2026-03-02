@@ -9,6 +9,7 @@ export interface Profile {
   avatar_url: string | null
   role: UserRole
   professional_type?: ProfessionalType | null
+  onboarding_completed?: boolean | null
   created_at: string
   updated_at: string
 }

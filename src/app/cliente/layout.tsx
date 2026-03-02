@@ -14,7 +14,6 @@ export default async function ClienteLayout({ children }: { children: React.Reac
   if (role !== 'admin' && role !== 'personal' && role !== 'user') redirect('/')
   if (role !== 'user') redirect(role === 'personal' ? '/profissional' : '/admin')
 
-  // Fetch avatar from client_profiles
   const supabase = await createSupabaseServerClient()
   const { data: clientProfile } = await supabase
     .from('client_profiles')
@@ -22,12 +21,15 @@ export default async function ClienteLayout({ children }: { children: React.Reac
     .eq('user_id', profile.id)
     .maybeSingle()
 
+  const onboardingComplete = profile.onboarding_completed === true
+
   return (
     <DashboardLayout
       role="user"
       name={profile.full_name}
       email={profile.email}
       avatarUrl={clientProfile?.avatar_url ?? null}
+      onboardingComplete={onboardingComplete}
     >
       {children}
     </DashboardLayout>

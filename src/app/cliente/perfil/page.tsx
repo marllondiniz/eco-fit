@@ -15,9 +15,11 @@ import {
   User, Camera, Save, CheckCircle2, AlertCircle,
   Dumbbell, Utensils, Trophy, TrendingUp, Target,
   Flame, Calendar, History, Phone, Mail,
-  ChevronLeft, ChevronRight, Sparkles, ArrowRight, PartyPopper, ClipboardList, Heart, Send, Home
+  ChevronLeft, ChevronRight, Sparkles, ArrowRight, PartyPopper, ClipboardList, Heart, Send, Home,
+  Upload, ImageIcon, Trash2, Loader2
 } from 'lucide-react'
 import Link from 'next/link'
+import Image from 'next/image'
 import { formatDate, formatDistanceToNow } from '@/lib/date-utils'
 
 // ── Máscaras de input ─────────────────────────────────────────────────────────
@@ -200,10 +202,20 @@ export default function PerfilPage() {
   const [selectedUF, setSelectedUF] = useState('')
   const [selectedCity, setSelectedCity] = useState('')
   const [activeTab, setActiveTab] = useState('dados')
+  const [profileStep, setProfileStep] = useState(1)
   const [showWelcome, setShowWelcome] = useState(false)
   const [showGoToAnamnese, setShowGoToAnamnese] = useState(false)
   const [showComplete, setShowComplete] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
+
+  const PROFILE_STEPS_MAX = 4
+
+  // Fotos corporais
+  const [bodyPhotos, setBodyPhotos] = useState<{ front: string | null; side: string | null; back: string | null }>({ front: null, side: null, back: null })
+  const [uploadingPhoto, setUploadingPhoto] = useState<string | null>(null)
+  const frontRef = useRef<HTMLInputElement>(null)
+  const sideRef  = useRef<HTMLInputElement>(null)
+  const backRef  = useRef<HTMLInputElement>(null)
 
   // Histórico
   const [sessions, setSessions]   = useState<any[]>([])
@@ -225,6 +237,7 @@ export default function PerfilPage() {
         { data: gamiData },
         { data: dietas },
         { data: treinos },
+        { data: photosData },
       ] = await Promise.all([
         supabase.from('profiles').select('full_name, email, phone, onboarding_completed').eq('id', user.id).maybeSingle(),
         supabase.from('client_profiles').select('*').eq('user_id', user.id).maybeSingle(),
@@ -235,6 +248,7 @@ export default function PerfilPage() {
           .eq('client_id', user.id).order('sent_at', { ascending: false }),
         supabase.from('workouts').select('id, name, division, status, sent_at, profiles!workouts_professional_id_fkey(full_name)')
           .eq('client_id', user.id).order('sent_at', { ascending: false }),
+        supabase.from('body_photos').select('photo_type, url').eq('user_id', user.id).order('uploaded_at', { ascending: false }),
       ])
 
       setUserName(profileBase?.full_name ?? '')
@@ -313,6 +327,13 @@ export default function PerfilPage() {
       setSessions(sessionsData ?? [])
       setGamification(gamiData ?? null)
 
+      // Fotos corporais
+      const photos: Record<string, string | null> = { front: null, side: null, back: null }
+      for (const p of (photosData ?? []) as any[]) {
+        if (!photos[p.photo_type]) photos[p.photo_type] = p.url
+      }
+      setBodyPhotos({ front: photos.front, side: photos.side, back: photos.back })
+
       const hist = [
         ...(dietas ?? []).map((d: any) => ({ ...d, _type: 'diet' })),
         ...(treinos ?? []).map((t: any) => ({ ...t, _type: 'workout' })),
@@ -330,6 +351,44 @@ export default function PerfilPage() {
     }
     load()
   }, [])
+
+  // ── Upload de foto corporal ──────────────────────────────────────────────
+  async function handleBodyPhoto(e: React.ChangeEvent<HTMLInputElement>, type: 'front' | 'side' | 'back') {
+    const file = e.target.files?.[0]
+    if (!file || !userId) return
+    setUploadingPhoto(type)
+
+    const ext = file.name.split('.').pop() ?? 'jpg'
+    const path = `${userId}/${type}.${ext}`
+
+    const { error: upErr } = await supabase.storage
+      .from('body-photos')
+      .upload(path, file, { upsert: true, cacheControl: '1' })
+
+    if (upErr) {
+      console.error('Body photo upload error:', upErr.message)
+      setUploadingPhoto(null)
+      return
+    }
+
+    const { data } = supabase.storage.from('body-photos').getPublicUrl(path)
+    const url = `${data.publicUrl}?t=${Date.now()}`
+
+    // Remove registro antigo (se existir) e insere novo
+    await supabase.from('body_photos').delete().eq('user_id', userId).eq('photo_type', type)
+    await supabase.from('body_photos').insert({ user_id: userId, photo_type: type, url })
+
+    setBodyPhotos(prev => ({ ...prev, [type]: url }))
+    setUploadingPhoto(null)
+  }
+
+  async function deleteBodyPhoto(type: 'front' | 'side' | 'back') {
+    if (!userId) return
+    setUploadingPhoto(type)
+    await supabase.from('body_photos').delete().eq('user_id', userId).eq('photo_type', type)
+    setBodyPhotos(prev => ({ ...prev, [type]: null }))
+    setUploadingPhoto(null)
+  }
 
   // ── Upload de avatar ──────────────────────────────────────────────────────
   async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
@@ -374,6 +433,13 @@ export default function PerfilPage() {
   // ── Salvar perfil pessoal ─────────────────────────────────────────────────
   async function saveProfile() {
     if (!userId) return
+
+    const pMissing = REQUIRED_PROFILE_FIELDS.filter(f => !getProfileFieldValue(f.key))
+    if (pMissing.length > 0) {
+      setSuccessProfile(false)
+      return
+    }
+
     setSavingProfile(true)
 
     await Promise.all([
@@ -410,20 +476,24 @@ export default function PerfilPage() {
   async function saveAnamnese() {
     if (!userId) return
 
-    // Validação mínima para concluir o perfil
-    const requiredFieldsFilled =
-      profile.age &&
-      profile.sex &&
-      profile.height_cm &&
-      profile.weight_kg &&
-      profile.goal &&
-      anamnese.food_allergies.trim() !== '' &&
-      anamnese.food_preferences.trim() !== ''
+    // Validação: todos os campos obrigatórios devem estar preenchidos
+    const pMissing = REQUIRED_PROFILE_FIELDS.filter(f => !getProfileFieldValue(f.key))
+    const aMissing = REQUIRED_ANAMNESE_FIELDS.filter(f => !getAnamneseFieldValue(f.key))
 
-    if (!requiredFieldsFilled) {
-      setErroAnamnese('Preencha os dados pessoais básicos e os campos obrigatórios da anamnese antes de confirmar.')
+    if (pMissing.length > 0 || aMissing.length > 0) {
+      const allMissing = [...pMissing, ...aMissing]
+      setErroAnamnese(
+        `Preencha todos os campos obrigatórios antes de confirmar. Pendentes: ${allMissing.map(f => f.label).join(', ')}.`
+      )
       return
     }
+
+    if (!anamnese.confirmed) {
+      setErroAnamnese('Marque a confirmação para concluir.')
+      return
+    }
+
+    const requiredFieldsFilled = true
     setErroAnamnese(null)
     setSavingAnamnese(true)
 
@@ -556,25 +626,107 @@ export default function PerfilPage() {
     )
   }
 
-  // Helpers de onboarding
-  const profileFilledBasic = !!(profile.age && profile.sex && profile.weight_kg && profile.height_cm && profile.goal)
-  const anamneseDone = anamnese.confirmed
+  // ── Campos obrigatórios ──────────────────────────────────────────────────
+  const REQUIRED_PROFILE_FIELDS: { key: string; label: string }[] = [
+    { key: 'userName', label: 'Nome completo' },
+    { key: 'userPhone', label: 'Telefone' },
+    { key: 'age', label: 'Idade' },
+    { key: 'sex', label: 'Sexo' },
+    { key: 'date_of_birth', label: 'Data de nascimento' },
+    { key: 'height_cm', label: 'Altura' },
+    { key: 'weight_kg', label: 'Peso' },
+    { key: 'profession', label: 'Profissão' },
+    { key: 'city_state', label: 'Cidade/Estado' },
+    { key: 'goal', label: 'Objetivo' },
+    { key: 'activity_level', label: 'Nível de atividade' },
+  ]
+
+  const REQUIRED_ANAMNESE_FIELDS: { key: string; label: string }[] = [
+    { key: 'wake_up_time', label: 'Horário de acordar' },
+    { key: 'sleep_time', label: 'Horário de dormir' },
+    { key: 'preferred_training_time', label: 'Horário para treinar' },
+    { key: 'trains_fasted', label: 'Treina em jejum?' },
+    { key: 'hunger_peak_time', label: 'Horário com mais fome' },
+    { key: 'feeding_difficulty_time', label: 'Dificuldade alimentar' },
+    { key: 'feeding_difficulty_reason', label: 'Motivo da dificuldade' },
+    { key: 'training_experience', label: 'Experiência em musculação' },
+    { key: 'weekly_availability', label: 'Disponibilidade semanal' },
+    { key: 'session_duration_min', label: 'Duração da sessão' },
+    { key: 'can_train_twice_daily', label: 'Treinar 2x ao dia' },
+    { key: 'does_aerobic', label: 'Pratica aeróbico' },
+    { key: 'training_location', label: 'Local de treino' },
+    { key: 'muscle_priorities', label: 'Prioridade muscular' },
+    { key: 'desired_timeframe', label: 'Prazo desejado' },
+    { key: 'meals_per_day', label: 'Refeições por dia' },
+    { key: 'skips_meals', label: 'Pula refeições?' },
+    { key: 'food_allergies', label: 'Restrição alimentar' },
+    { key: 'food_preferences', label: 'Preferências alimentares' },
+    { key: 'disliked_foods', label: 'Alimentos que não gosta' },
+    { key: 'alcohol_consumption', label: 'Consumo de álcool' },
+    { key: 'daily_water_intake', label: 'Consumo de água' },
+    { key: 'meal_prep_time', label: 'Tempo para preparo' },
+    { key: 'diseases', label: 'Condições de saúde' },
+    { key: 'injuries', label: 'Lesões' },
+    { key: 'frequent_pain', label: 'Dores frequentes' },
+    { key: 'medications', label: 'Medicamentos' },
+    { key: 'health_history', label: 'Histórico de saúde' },
+    { key: 'previous_coaching', label: 'Acompanhamento anterior' },
+    { key: 'discipline_level', label: 'Nível de disciplina' },
+    { key: 'biggest_difficulty', label: 'Maior dificuldade' },
+    { key: 'motivation_reason', label: 'Motivação' },
+  ]
+
+  function getProfileFieldValue(key: string): string {
+    if (key === 'userName') return userName.trim()
+    if (key === 'userPhone') return userPhone.replace(/\D/g, '')
+    return (profile[key as keyof ClientProfile] ?? '').toString().trim()
+  }
+
+  function getAnamneseFieldValue(key: string): string {
+    return (anamnese[key as keyof Anamnese] ?? '').toString().trim()
+  }
+
+  const missingProfileFields = REQUIRED_PROFILE_FIELDS.filter(f => !getProfileFieldValue(f.key))
+  const missingAnamneseFields = REQUIRED_ANAMNESE_FIELDS.filter(f => !getAnamneseFieldValue(f.key))
+  const profileFilledAll = missingProfileFields.length === 0
+  const anamneseFilledAll = missingAnamneseFields.length === 0
+  const anamneseDone = anamnese.confirmed && anamneseFilledAll && profileFilledAll
 
   const ONBOARDING_STEPS = [
-    { key: 'dados',     label: 'Dados Pessoais', done: profileFilledBasic },
+    { key: 'dados',     label: 'Dados Pessoais', done: profileFilledAll },
     { key: 'anamnese',  label: 'Anamnese',       done: anamneseDone },
   ]
+
+  const profilePct = Math.round(((REQUIRED_PROFILE_FIELDS.length - missingProfileFields.length) / REQUIRED_PROFILE_FIELDS.length) * 100)
+  const anamnesePct = Math.round(((REQUIRED_ANAMNESE_FIELDS.length - missingAnamneseFields.length) / REQUIRED_ANAMNESE_FIELDS.length) * 100)
 
   // ── Welcome screen ─────────────────────────────────────────────────────
   if (showWelcome) {
     return (
       <div className="flex items-center justify-center min-h-[70vh] px-4">
         <div className="max-w-md w-full space-y-6 text-center">
-          <div className="mx-auto w-20 h-20 rounded-full bg-gradient-to-br from-emerald-400 to-emerald-600 flex items-center justify-center shadow-lg shadow-emerald-500/25">
-            <Sparkles className="w-10 h-10 text-white" />
+          <div className="flex justify-center">
+            <span className="relative block h-14 w-[140px]">
+              <Image
+                src="/logo-preto.png"
+                alt="LB.FIT"
+                fill
+                className="object-contain object-center dark:hidden"
+                sizes="140px"
+                priority
+              />
+              <Image
+                src="/logo-branco.png"
+                alt="LB.FIT"
+                fill
+                className="object-contain object-center hidden dark:block"
+                sizes="140px"
+                priority
+              />
+            </span>
           </div>
           <div className="space-y-2">
-            <h1 className="text-2xl font-bold text-foreground">Bem-vindo(a) ao ECOFIT!</h1>
+            <h1 className="text-2xl font-bold text-foreground">Bem-vindo(a) ao LB.FIT!</h1>
             <p className="text-muted-foreground text-sm leading-relaxed">
               Vamos configurar seu perfil em poucos minutos. Com suas informações, seu profissional poderá criar planos <strong>100% personalizados</strong> para você.
             </p>
@@ -605,9 +757,9 @@ export default function PerfilPage() {
           >
             Vamos começar <ArrowRight className="w-5 h-5" />
           </Button>
-          <button onClick={() => setShowWelcome(false)} className="text-xs text-muted-foreground hover:underline">
-            Preencher depois
-          </button>
+          <p className="text-xs text-muted-foreground">
+            Todos os campos são obrigatórios para liberar o acesso à plataforma.
+          </p>
         </div>
       </div>
     )
@@ -743,14 +895,18 @@ export default function PerfilPage() {
       </div>
 
       {/* Mini progresso do onboarding (só exibe se falta completar) */}
-      {(!profileFilledBasic || !anamneseDone) && (
-        <div className="bg-card border border-border rounded-xl p-4 space-y-3">
+      {(!profileFilledAll || !anamneseDone) && (
+        <div className="bg-card border border-amber-200 dark:border-amber-800 rounded-xl p-4 space-y-3">
           <div className="flex items-center gap-2">
-            <ClipboardList className="w-4 h-4 text-primary" />
-            <span className="text-sm font-semibold text-foreground">Complete seu cadastro</span>
-            <span className="ml-auto text-xs text-muted-foreground">
-              {ONBOARDING_STEPS.filter(s => s.done).length}/{ONBOARDING_STEPS.length}
-            </span>
+            <AlertCircle className="w-4 h-4 text-amber-500" />
+            <span className="text-sm font-semibold text-foreground">Complete seu cadastro para acessar a plataforma</span>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Todos os campos de dados pessoais e anamnese são obrigatórios. Você só terá acesso às demais áreas após preencher 100%.
+          </p>
+          <div className="flex gap-3 text-xs text-muted-foreground">
+            <span>Dados: <strong className={profileFilledAll ? 'text-emerald-600' : 'text-amber-600'}>{profilePct}%</strong></span>
+            <span>Anamnese: <strong className={anamneseFilledAll ? 'text-emerald-600' : 'text-amber-600'}>{anamnesePct}%</strong></span>
           </div>
           <div className="flex gap-2">
             {ONBOARDING_STEPS.map((s) => (
@@ -800,7 +956,7 @@ export default function PerfilPage() {
       <Tabs value={activeTab} onValueChange={v => { setActiveTab(v); setShowGoToAnamnese(false) }} className="w-full">
         <TabsList className="w-full grid grid-cols-3">
           <TabsTrigger value="dados" className="gap-1.5 text-xs sm:text-sm">
-            {profileFilledBasic ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <User className="w-3.5 h-3.5" />}
+            {profileFilledAll ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> : <User className="w-3.5 h-3.5" />}
             <span>Dados</span>
           </TabsTrigger>
           <TabsTrigger value="anamnese" className="gap-1.5 text-xs sm:text-sm">
@@ -813,139 +969,208 @@ export default function PerfilPage() {
           </TabsTrigger>
         </TabsList>
 
-        {/* ── ABA: Dados Pessoais ─────────────────────────────────────────── */}
+        {/* ── ABA: Dados Pessoais (com steps) ─────────────────────────────── */}
         <TabsContent value="dados" className="mt-4 space-y-4">
+          {/* Alerta campos pendentes */}
+          {missingProfileFields.length > 0 && (
+            <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800 rounded-xl px-4 py-3 flex items-start gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-xs font-medium text-amber-700 dark:text-amber-300">
+                  {missingProfileFields.length} {missingProfileFields.length === 1 ? 'campo pendente' : 'campos pendentes'}
+                </p>
+                <p className="text-xs text-amber-600/80 dark:text-amber-400/80 mt-0.5">
+                  {missingProfileFields.map(f => f.label).join(', ')}
+                </p>
+              </div>
+            </div>
+          )}
+          {/* Barra de progresso dos steps do perfil */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>Etapa {profileStep} de {PROFILE_STEPS_MAX}</span>
+              <span>{Math.round((profileStep / PROFILE_STEPS_MAX) * 100)}%</span>
+            </div>
+            <div className="flex gap-1.5">
+              {Array.from({ length: PROFILE_STEPS_MAX }, (_, i) => i + 1).map(s => (
+                <button key={s} type="button" onClick={() => setProfileStep(s)}
+                  className={`h-2 flex-1 rounded-full transition-colors ${s <= profileStep ? 'bg-emerald-500' : 'bg-muted'}`}
+                />
+              ))}
+            </div>
+            <p className="text-sm font-semibold text-foreground text-center">
+              {profileStep === 1 && 'Contato'}
+              {profileStep === 2 && 'Identificação e medidas'}
+              {profileStep === 3 && 'Localização'}
+              {profileStep === 4 && 'Objetivos'}
+            </p>
+          </div>
+
           <Card>
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <User className="w-4 h-4 text-primary" />
-                1. Dados Pessoais
+                Dados Pessoais
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="fullName">Nome completo</Label>
-                  <Input id="fullName" value={userName} onChange={e => setUserName(e.target.value)} placeholder="Seu nome completo" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="phone">Telefone</Label>
-                  <div className="relative">
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input id="phone" className="pl-9" value={userPhone} onChange={e => setUserPhone(maskPhone(e.target.value))} placeholder="(00) 00000-0000" maxLength={16} />
+              {/* Step 1: Contato */}
+              {profileStep === 1 && (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div className="space-y-1.5">
+                    <Label htmlFor="fullName" className={!userName.trim() ? 'text-red-600 dark:text-red-400' : ''}>Nome completo *</Label>
+                    <Input id="fullName" value={userName} onChange={e => setUserName(e.target.value)} placeholder="Seu nome completo" className={!userName.trim() ? 'border-red-300 dark:border-red-700' : ''} />
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label htmlFor="phone" className={!userPhone.replace(/\D/g, '') ? 'text-red-600 dark:text-red-400' : ''}>Telefone *</Label>
+                    <div className="relative">
+                      <Phone className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input id="phone" className={`pl-9 ${!userPhone.replace(/\D/g, '') ? 'border-red-300 dark:border-red-700' : ''}`} value={userPhone} onChange={e => setUserPhone(maskPhone(e.target.value))} placeholder="(00) 00000-0000" maxLength={16} />
+                    </div>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label>E-mail</Label>
+                    <div className="relative">
+                      <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                      <Input className="pl-9 bg-muted/50 cursor-not-allowed" value={userEmail} readOnly disabled />
+                    </div>
                   </div>
                 </div>
-                <div className="space-y-1.5">
-                  <Label>E-mail</Label>
-                  <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input className="pl-9 bg-muted/50 cursor-not-allowed" value={userEmail} readOnly disabled />
+              )}
+
+              {/* Step 2: Identificação e medidas */}
+              {profileStep === 2 && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="age" className={!profile.age ? 'text-red-600 dark:text-red-400' : ''}>Idade *</Label>
+                      <Input id="age" inputMode="numeric" value={profile.age} onChange={e => setProfile(p => ({ ...p, age: maskAge(e.target.value) }))} placeholder="Ex: 25" maxLength={3} className={!profile.age ? 'border-red-300 dark:border-red-700' : ''} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="dob" className={!profile.date_of_birth ? 'text-red-600 dark:text-red-400' : ''}>Data de nascimento *</Label>
+                      <Input id="dob" type="date" value={profile.date_of_birth} onChange={e => setProfile(p => ({ ...p, date_of_birth: e.target.value }))} className={!profile.date_of_birth ? 'border-red-300 dark:border-red-700' : ''} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className={!profile.sex ? 'text-red-600 dark:text-red-400' : ''}>Sexo *</Label>
+                      <Select value={profile.sex || 'none'} onValueChange={v => setProfile(p => ({ ...p, sex: v === 'none' ? '' : v }))}>
+                        <SelectTrigger><SelectValue placeholder="Selecionar" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="none">Não informado</SelectItem>
+                          {SEX_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                    <div className="space-y-1.5">
+                      <Label htmlFor="weight" className={!profile.weight_kg ? 'text-red-600 dark:text-red-400' : ''}>Peso atual (kg) *</Label>
+                      <Input id="weight" inputMode="decimal" value={profile.weight_kg} onChange={e => setProfile(p => ({ ...p, weight_kg: maskWeight(e.target.value) }))} placeholder="Ex: 70.5" maxLength={5} className={!profile.weight_kg ? 'border-red-300 dark:border-red-700' : ''} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="height" className={!profile.height_cm ? 'text-red-600 dark:text-red-400' : ''}>Altura (cm) *</Label>
+                      <Input id="height" inputMode="numeric" value={profile.height_cm} onChange={e => setProfile(p => ({ ...p, height_cm: maskHeight(e.target.value) }))} placeholder="Ex: 175" maxLength={3} className={!profile.height_cm ? 'border-red-300 dark:border-red-700' : ''} />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label htmlFor="profession" className={!profile.profession.trim() ? 'text-red-600 dark:text-red-400' : ''}>Profissão *</Label>
+                      <Input id="profession" value={profile.profession} onChange={e => setProfile(p => ({ ...p, profession: e.target.value }))} placeholder="Ex: Engenheiro" className={!profile.profession.trim() ? 'border-red-300 dark:border-red-700' : ''} />
+                    </div>
                   </div>
                 </div>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="age">Idade</Label>
-                  <Input id="age" inputMode="numeric" value={profile.age} onChange={e => setProfile(p => ({ ...p, age: maskAge(e.target.value) }))} placeholder="Ex: 25" maxLength={3} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="dob">Data de nascimento</Label>
-                  <Input id="dob" type="date" value={profile.date_of_birth} onChange={e => setProfile(p => ({ ...p, date_of_birth: e.target.value }))} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Sexo</Label>
-                  <Select value={profile.sex || 'none'} onValueChange={v => setProfile(p => ({ ...p, sex: v === 'none' ? '' : v }))}>
-                    <SelectTrigger><SelectValue placeholder="Selecionar" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Não informado</SelectItem>
-                      {SEX_OPTIONS.map(o => <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>)}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                <div className="space-y-1.5">
-                  <Label htmlFor="weight">Peso atual (kg)</Label>
-                  <Input id="weight" inputMode="decimal" value={profile.weight_kg} onChange={e => setProfile(p => ({ ...p, weight_kg: maskWeight(e.target.value) }))} placeholder="Ex: 70.5" maxLength={5} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="height">Altura (cm)</Label>
-                  <Input id="height" inputMode="numeric" value={profile.height_cm} onChange={e => setProfile(p => ({ ...p, height_cm: maskHeight(e.target.value) }))} placeholder="Ex: 175" maxLength={3} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label htmlFor="profession">Profissão</Label>
-                  <Input id="profession" value={profile.profession} onChange={e => setProfile(p => ({ ...p, profession: e.target.value }))} placeholder="Ex: Engenheiro" />
-                </div>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <Label>Estado</Label>
-                  <Select value={selectedUF || 'none'} onValueChange={uf => {
-                    const v = uf === 'none' ? '' : uf
-                    setSelectedUF(v)
-                    setSelectedCity('')
-                    setProfile(p => ({ ...p, city_state: '' }))
-                  }}>
-                    <SelectTrigger><SelectValue placeholder="Selecionar estado" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Selecionar</SelectItem>
-                      {Object.keys(ESTADOS_CIDADES).sort().map(uf => (
-                        <SelectItem key={uf} value={uf}>{uf}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Cidade</Label>
-                  <Select value={selectedCity || 'none'} onValueChange={city => {
-                    const v = city === 'none' ? '' : city
-                    setSelectedCity(v)
-                    if (v && selectedUF) {
-                      setProfile(p => ({ ...p, city_state: `${v} / ${selectedUF}` }))
-                    }
-                  }} disabled={!selectedUF}>
-                    <SelectTrigger><SelectValue placeholder={selectedUF ? 'Selecionar cidade' : 'Selecione o estado primeiro'} /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Selecionar</SelectItem>
-                      {(ESTADOS_CIDADES[selectedUF] ?? []).map(city => (
-                        <SelectItem key={city} value={city}>{city}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
+              )}
 
-              <div className="space-y-1.5">
-                <Label>Objetivo principal</Label>
-                <Select value={profile.goal || 'none'} onValueChange={v => setProfile(p => ({ ...p, goal: v === 'none' ? '' : v }))}>
-                  <SelectTrigger><SelectValue placeholder="Selecionar objetivo" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Não informado</SelectItem>
-                    {GOALS.map(g => <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* Step 3: Localização */}
+              {profileStep === 3 && (
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1.5">
+                    <Label className={!selectedUF ? 'text-red-600 dark:text-red-400' : ''}>Estado *</Label>
+                    <Select value={selectedUF || 'none'} onValueChange={uf => {
+                      const v = uf === 'none' ? '' : uf
+                      setSelectedUF(v)
+                      setSelectedCity('')
+                      setProfile(p => ({ ...p, city_state: '' }))
+                    }}>
+                      <SelectTrigger><SelectValue placeholder="Selecionar estado" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Selecionar</SelectItem>
+                        {Object.keys(ESTADOS_CIDADES).sort().map(uf => (
+                          <SelectItem key={uf} value={uf}>{uf}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className={!selectedCity ? 'text-red-600 dark:text-red-400' : ''}>Cidade *</Label>
+                    <Select value={selectedCity || 'none'} onValueChange={city => {
+                      const v = city === 'none' ? '' : city
+                      setSelectedCity(v)
+                      if (v && selectedUF) {
+                        setProfile(p => ({ ...p, city_state: `${v} / ${selectedUF}` }))
+                      }
+                    }} disabled={!selectedUF}>
+                      <SelectTrigger><SelectValue placeholder={selectedUF ? 'Selecionar cidade' : 'Selecione o estado primeiro'} /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Selecionar</SelectItem>
+                        {(ESTADOS_CIDADES[selectedUF] ?? []).map(city => (
+                          <SelectItem key={city} value={city}>{city}</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
 
-              <div className="space-y-1.5">
-                <Label>Nível de atividade atual</Label>
-                <Select value={profile.activity_level || 'none'} onValueChange={v => setProfile(p => ({ ...p, activity_level: v === 'none' ? '' : v }))}>
-                  <SelectTrigger><SelectValue placeholder="Selecionar nível" /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Não informado</SelectItem>
-                    {ACTIVITY_LEVELS.map(a => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* Step 4: Objetivos */}
+              {profileStep === 4 && (
+                <div className="space-y-4">
+                  <div className="space-y-1.5">
+                    <Label className={!profile.goal ? 'text-red-600 dark:text-red-400' : ''}>Objetivo principal *</Label>
+                    <Select value={profile.goal || 'none'} onValueChange={v => setProfile(p => ({ ...p, goal: v === 'none' ? '' : v }))}>
+                      <SelectTrigger><SelectValue placeholder="Selecionar objetivo" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Não informado</SelectItem>
+                        {GOALS.map(g => <SelectItem key={g.value} value={g.value}>{g.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <Label className={!profile.activity_level ? 'text-red-600 dark:text-red-400' : ''}>Nível de atividade atual *</Label>
+                    <Select value={profile.activity_level || 'none'} onValueChange={v => setProfile(p => ({ ...p, activity_level: v === 'none' ? '' : v }))}>
+                      <SelectTrigger><SelectValue placeholder="Selecionar nível" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Não informado</SelectItem>
+                        {ACTIVITY_LEVELS.map(a => <SelectItem key={a.value} value={a.value}>{a.label}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {successProfile && (
+                    <p className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium">
+                      <CheckCircle2 className="w-4 h-4" /> Salvo com sucesso
+                    </p>
+                  )}
+                </div>
+              )}
 
-              <div className="pt-2 flex items-center gap-3">
-                <Button onClick={saveProfile} disabled={savingProfile} className="bg-emerald-600 hover:bg-emerald-700 text-white gap-2">
-                  <Save className="w-4 h-4" />
-                  {savingProfile ? 'Salvando...' : 'Salvar dados'}
+              {/* Navegação dos steps do perfil */}
+              <div className="flex items-center justify-between pt-4 border-t border-border">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setProfileStep(s => Math.max(1, s - 1))}
+                  disabled={profileStep === 1}
+                  className="gap-2"
+                >
+                  <ChevronLeft className="w-4 h-4" /> Voltar
                 </Button>
-                {successProfile && (
-                  <span className="flex items-center gap-1.5 text-sm text-emerald-600 font-medium">
-                    <CheckCircle2 className="w-4 h-4" /> Salvo com sucesso
-                  </span>
+                <span className="text-xs text-muted-foreground">{profileStep} / {PROFILE_STEPS_MAX}</span>
+                {profileStep < PROFILE_STEPS_MAX ? (
+                  <Button type="button" onClick={() => setProfileStep(s => Math.min(PROFILE_STEPS_MAX, s + 1))} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
+                    Próximo <ChevronRight className="w-4 h-4" />
+                  </Button>
+                ) : (
+                  <Button onClick={saveProfile} disabled={savingProfile} className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white">
+                    <Save className="w-4 h-4" />
+                    {savingProfile ? 'Salvando...' : 'Salvar dados'}
+                  </Button>
                 )}
               </div>
             </CardContent>
@@ -955,10 +1180,15 @@ export default function PerfilPage() {
         {/* ── ABA: Anamnese ───────────────────────────────────────────────── */}
         <TabsContent value="anamnese" className="mt-4 space-y-4">
           {/* Header + Progresso */}
-          <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/50 rounded-xl px-4 py-3">
+          <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-100 dark:border-amber-900/50 rounded-xl px-4 py-3 space-y-2">
             <p className="text-xs text-amber-700 dark:text-amber-400 font-medium">
-              Suas informações são confidenciais e visíveis somente para você e o seu profissional responsável. Quanto mais completo, mais personalizado será seu plano.
+              Suas informações são confidenciais e visíveis somente para você e o seu profissional responsável. <strong>Todos os campos são obrigatórios.</strong>
             </p>
+            {missingAnamneseFields.length > 0 && (
+              <p className="text-xs text-amber-600/80 dark:text-amber-400/80">
+                {missingAnamneseFields.length} {missingAnamneseFields.length === 1 ? 'campo pendente' : 'campos pendentes'}: {missingAnamneseFields.map(f => f.label).join(', ')}
+              </p>
+            )}
           </div>
           {erroAnamnese && (
             <div className="bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-800 rounded-xl px-4 py-3 flex items-center gap-2">
@@ -970,11 +1200,11 @@ export default function PerfilPage() {
           {/* Barra de progresso dos steps */}
           <div className="space-y-2">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <span>Etapa {anamneseStep} de 5</span>
-              <span>{Math.round((anamneseStep / 5) * 100)}% concluído</span>
+              <span>Etapa {anamneseStep} de 6</span>
+              <span>{Math.round((anamneseStep / 6) * 100)}% concluído</span>
             </div>
             <div className="flex gap-1.5">
-              {[1,2,3,4,5].map(s => (
+              {[1,2,3,4,5,6].map(s => (
                 <button key={s} onClick={() => setAnamneseStep(s)}
                   className={`h-2 flex-1 rounded-full transition-colors ${s <= anamneseStep ? 'bg-emerald-500' : 'bg-muted'}`}
                 />
@@ -986,7 +1216,8 @@ export default function PerfilPage() {
                 {anamneseStep === 2 && 'Treinamento'}
                 {anamneseStep === 3 && 'Objetivos e Alimentação'}
                 {anamneseStep === 4 && 'Saúde e Histórico'}
-                {anamneseStep === 5 && 'Comportamento e Finalização'}
+                {anamneseStep === 5 && 'Fotos Corporais'}
+                {anamneseStep === 6 && 'Comportamento e Finalização'}
               </span>
             </div>
           </div>
@@ -1002,20 +1233,20 @@ export default function PerfilPage() {
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label>Horário que costuma acordar</Label>
-                    <Input type="time" value={anamnese.wake_up_time} onChange={e => setAnamnese(a => ({ ...a, wake_up_time: e.target.value }))} />
+                    <Label className={!anamnese.wake_up_time ? 'text-red-600 dark:text-red-400' : ''}>Horário que costuma acordar *</Label>
+                    <Input type="time" value={anamnese.wake_up_time} onChange={e => setAnamnese(a => ({ ...a, wake_up_time: e.target.value }))} className={!anamnese.wake_up_time ? 'border-red-300 dark:border-red-700' : ''} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Horário que costuma dormir</Label>
-                    <Input type="time" value={anamnese.sleep_time} onChange={e => setAnamnese(a => ({ ...a, sleep_time: e.target.value }))} />
+                    <Label className={!anamnese.sleep_time ? 'text-red-600 dark:text-red-400' : ''}>Horário que costuma dormir *</Label>
+                    <Input type="time" value={anamnese.sleep_time} onChange={e => setAnamnese(a => ({ ...a, sleep_time: e.target.value }))} className={!anamnese.sleep_time ? 'border-red-300 dark:border-red-700' : ''} />
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Melhor horário para treinar</Label>
-                  <Input type="time" value={anamnese.preferred_training_time} onChange={e => setAnamnese(a => ({ ...a, preferred_training_time: e.target.value }))} />
+                  <Label className={!anamnese.preferred_training_time ? 'text-red-600 dark:text-red-400' : ''}>Melhor horário para treinar *</Label>
+                  <Input type="time" value={anamnese.preferred_training_time} onChange={e => setAnamnese(a => ({ ...a, preferred_training_time: e.target.value }))} className={!anamnese.preferred_training_time ? 'border-red-300 dark:border-red-700' : ''} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Treina em jejum?</Label>
+                  <Label className={!anamnese.trains_fasted ? 'text-red-600 dark:text-red-400' : ''}>Treina em jejum? *</Label>
                   <Select value={anamnese.trains_fasted || 'none'} onValueChange={v => setAnamnese(a => ({ ...a, trains_fasted: v === 'none' ? '' : v }))}>
                     <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                     <SelectContent>
@@ -1027,15 +1258,15 @@ export default function PerfilPage() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Horário em que sente mais fome</Label>
-                  <Input value={anamnese.hunger_peak_time} onChange={e => setAnamnese(a => ({ ...a, hunger_peak_time: e.target.value }))} placeholder="Ex: Meio da tarde, 16h" />
+                  <Label className={!anamnese.hunger_peak_time ? 'text-red-600 dark:text-red-400' : ''}>Horário em que sente mais fome *</Label>
+                  <Input value={anamnese.hunger_peak_time} onChange={e => setAnamnese(a => ({ ...a, hunger_peak_time: e.target.value }))} placeholder="Ex: Meio da tarde, 16h" className={!anamnese.hunger_peak_time ? 'border-red-300 dark:border-red-700' : ''} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Horário com mais dificuldade para se alimentar</Label>
-                  <Input value={anamnese.feeding_difficulty_time} onChange={e => setAnamnese(a => ({ ...a, feeding_difficulty_time: e.target.value }))} placeholder="Ex: Manhã, 7h" />
+                  <Label className={!anamnese.feeding_difficulty_time ? 'text-red-600 dark:text-red-400' : ''}>Horário com mais dificuldade para se alimentar *</Label>
+                  <Input value={anamnese.feeding_difficulty_time} onChange={e => setAnamnese(a => ({ ...a, feeding_difficulty_time: e.target.value }))} placeholder="Ex: Manhã, 7h" className={!anamnese.feeding_difficulty_time ? 'border-red-300 dark:border-red-700' : ''} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Motivo da dificuldade</Label>
+                  <Label className={!anamnese.feeding_difficulty_reason ? 'text-red-600 dark:text-red-400' : ''}>Motivo da dificuldade *</Label>
                   <Select value={anamnese.feeding_difficulty_reason || 'none'} onValueChange={v => setAnamnese(a => ({ ...a, feeding_difficulty_reason: v === 'none' ? '' : v }))}>
                     <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                     <SelectContent>
@@ -1060,7 +1291,7 @@ export default function PerfilPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-1.5">
-                  <Label>Experiência em musculação</Label>
+                  <Label className={!anamnese.training_experience ? 'text-red-600 dark:text-red-400' : ''}>Experiência em musculação *</Label>
                   <Select value={anamnese.training_experience || 'none'} onValueChange={v => setAnamnese(a => ({ ...a, training_experience: v === 'none' ? '' : v }))}>
                     <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                     <SelectContent>
@@ -1073,7 +1304,7 @@ export default function PerfilPage() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Quantas vezes por semana pode treinar?</Label>
+                  <Label className={!anamnese.weekly_availability ? 'text-red-600 dark:text-red-400' : ''}>Quantas vezes por semana pode treinar? *</Label>
                   <Select value={anamnese.weekly_availability || 'none'} onValueChange={v => setAnamnese(a => ({ ...a, weekly_availability: v === 'none' ? '' : v }))}>
                     <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                     <SelectContent>
@@ -1083,7 +1314,7 @@ export default function PerfilPage() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Tempo disponível por sessão</Label>
+                  <Label className={!anamnese.session_duration_min ? 'text-red-600 dark:text-red-400' : ''}>Tempo disponível por sessão *</Label>
                   <Select value={anamnese.session_duration_min || 'none'} onValueChange={v => setAnamnese(a => ({ ...a, session_duration_min: v === 'none' ? '' : v }))}>
                     <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                     <SelectContent>
@@ -1096,7 +1327,7 @@ export default function PerfilPage() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Consegue realizar atividade física mais de 1x ao dia?</Label>
+                  <Label className={!anamnese.can_train_twice_daily ? 'text-red-600 dark:text-red-400' : ''}>Consegue realizar atividade física mais de 1x ao dia? *</Label>
                   <Select value={anamnese.can_train_twice_daily || 'none'} onValueChange={v => setAnamnese(a => ({ ...a, can_train_twice_daily: v === 'none' ? '' : v }))}>
                     <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                     <SelectContent>
@@ -1107,7 +1338,7 @@ export default function PerfilPage() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Já pratica atividade aeróbica?</Label>
+                  <Label className={!anamnese.does_aerobic ? 'text-red-600 dark:text-red-400' : ''}>Já pratica atividade aeróbica? *</Label>
                   <Select value={anamnese.does_aerobic || 'none'} onValueChange={v => setAnamnese(a => ({ ...a, does_aerobic: v === 'none' ? '' : v }))}>
                     <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                     <SelectContent>
@@ -1134,7 +1365,7 @@ export default function PerfilPage() {
                   <Textarea value={anamnese.additional_modalities} onChange={e => setAnamnese(a => ({ ...a, additional_modalities: e.target.value }))} placeholder="Ex: Jiu-jitsu 2x/semana, corrida aos sábados..." rows={2} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Local de treino</Label>
+                  <Label className={!anamnese.training_location ? 'text-red-600 dark:text-red-400' : ''}>Local de treino *</Label>
                   <Select value={anamnese.training_location || 'none'} onValueChange={v => setAnamnese(a => ({ ...a, training_location: v === 'none' ? '' : v }))}>
                     <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                     <SelectContent>
@@ -1183,15 +1414,15 @@ export default function PerfilPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-1.5">
-                    <Label>Objetivo secundário (opcional)</Label>
+                    <Label>Objetivo secundário</Label>
                     <Input value={anamnese.secondary_goal} onChange={e => setAnamnese(a => ({ ...a, secondary_goal: e.target.value }))} placeholder="Ex: Melhorar condicionamento, flexibilidade..." />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Prioridade muscular (se houver)</Label>
+                    <Label className={!anamnese.muscle_priorities.trim() ? 'text-red-600 dark:text-red-400' : ''}>Prioridade muscular *</Label>
                     <Textarea value={anamnese.muscle_priorities} onChange={e => setAnamnese(a => ({ ...a, muscle_priorities: e.target.value }))} placeholder="Ex: Glúteos, costas, pernas, ombros..." rows={2} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Prazo desejado para resultado</Label>
+                    <Label className={!anamnese.desired_timeframe ? 'text-red-600 dark:text-red-400' : ''}>Prazo desejado para resultado *</Label>
                     <Select value={anamnese.desired_timeframe || 'none'} onValueChange={v => setAnamnese(a => ({ ...a, desired_timeframe: v === 'none' ? '' : v }))}>
                       <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                       <SelectContent>
@@ -1215,7 +1446,7 @@ export default function PerfilPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="space-y-1.5">
-                    <Label>Número médio de refeições por dia</Label>
+                    <Label className={!anamnese.meals_per_day ? 'text-red-600 dark:text-red-400' : ''}>Número médio de refeições por dia *</Label>
                     <Select value={anamnese.meals_per_day || 'none'} onValueChange={v => setAnamnese(a => ({ ...a, meals_per_day: v === 'none' ? '' : v }))}>
                       <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                       <SelectContent>
@@ -1225,7 +1456,7 @@ export default function PerfilPage() {
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Costuma pular refeições?</Label>
+                    <Label className={!anamnese.skips_meals ? 'text-red-600 dark:text-red-400' : ''}>Costuma pular refeições? *</Label>
                     <Select value={anamnese.skips_meals || 'none'} onValueChange={v => setAnamnese(a => ({ ...a, skips_meals: v === 'none' ? '' : v }))}>
                       <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                       <SelectContent>
@@ -1236,7 +1467,7 @@ export default function PerfilPage() {
                     </Select>
                   </div>
                   <div className="space-y-2">
-                    <Label>Restrição alimentar</Label>
+                    <Label className={!anamnese.food_allergies.trim() ? 'text-red-600 dark:text-red-400' : ''}>Restrição alimentar *</Label>
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       {['Lactose', 'Glúten', 'Ovos', 'Nenhuma'].map(r => {
                         const checked = anamnese.food_allergies.includes(r)
@@ -1258,15 +1489,15 @@ export default function PerfilPage() {
                     <Input value={anamnese.food_allergies} onChange={e => setAnamnese(a => ({ ...a, food_allergies: e.target.value }))} placeholder="Outras alergias/intolerâncias..." className="text-sm" />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Preferências alimentares</Label>
+                    <Label className={!anamnese.food_preferences.trim() ? 'text-red-600 dark:text-red-400' : ''}>Preferências alimentares *</Label>
                     <Textarea value={anamnese.food_preferences} onChange={e => setAnamnese(a => ({ ...a, food_preferences: e.target.value }))} placeholder="Ex: Vegano, vegetariano, low carb..." rows={2} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Alimentos que não gosta</Label>
+                    <Label className={!anamnese.disliked_foods.trim() ? 'text-red-600 dark:text-red-400' : ''}>Alimentos que não gosta *</Label>
                     <Textarea value={anamnese.disliked_foods} onChange={e => setAnamnese(a => ({ ...a, disliked_foods: e.target.value }))} placeholder="Ex: Beterraba, fígado, quiabo..." rows={2} />
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Consumo de álcool</Label>
+                    <Label className={!anamnese.alcohol_consumption ? 'text-red-600 dark:text-red-400' : ''}>Consumo de álcool *</Label>
                     <Select value={anamnese.alcohol_consumption || 'none'} onValueChange={v => setAnamnese(a => ({ ...a, alcohol_consumption: v === 'none' ? '' : v }))}>
                       <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                       <SelectContent>
@@ -1278,7 +1509,7 @@ export default function PerfilPage() {
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Consumo de água diário estimado</Label>
+                    <Label className={!anamnese.daily_water_intake ? 'text-red-600 dark:text-red-400' : ''}>Consumo de água diário estimado *</Label>
                     <Select value={anamnese.daily_water_intake || 'none'} onValueChange={v => setAnamnese(a => ({ ...a, daily_water_intake: v === 'none' ? '' : v }))}>
                       <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                       <SelectContent>
@@ -1295,7 +1526,7 @@ export default function PerfilPage() {
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Tempo disponível para preparar refeições</Label>
+                    <Label className={!anamnese.meal_prep_time ? 'text-red-600 dark:text-red-400' : ''}>Tempo disponível para preparar refeições *</Label>
                     <Select value={anamnese.meal_prep_time || 'none'} onValueChange={v => setAnamnese(a => ({ ...a, meal_prep_time: v === 'none' ? '' : v }))}>
                       <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                       <SelectContent>
@@ -1321,7 +1552,7 @@ export default function PerfilPage() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label>Possui alguma condição diagnosticada?</Label>
+                  <Label className={!anamnese.diseases.trim() ? 'text-red-600 dark:text-red-400' : ''}>Possui alguma condição diagnosticada? *</Label>
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     {['Nenhuma', 'Diabetes', 'Hipoglicemia', 'Hipotireoidismo', 'Hérnia'].map(cond => {
                       const checked = anamnese.diseases.includes(cond)
@@ -1343,31 +1574,119 @@ export default function PerfilPage() {
                   <Input value={anamnese.diseases} onChange={e => setAnamnese(a => ({ ...a, diseases: e.target.value }))} placeholder="Outras condições..." className="text-sm" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Lesões (joelho, ombro, coluna, etc.)</Label>
+                  <Label className={!anamnese.injuries.trim() ? 'text-red-600 dark:text-red-400' : ''}>Lesões (joelho, ombro, coluna, etc.) *</Label>
                   <Textarea value={anamnese.injuries} onChange={e => setAnamnese(a => ({ ...a, injuries: e.target.value }))} placeholder="Descreva lesões atuais ou passadas..." rows={2} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Sente dores frequentes? Onde?</Label>
+                  <Label className={!anamnese.frequent_pain.trim() ? 'text-red-600 dark:text-red-400' : ''}>Sente dores frequentes? Onde? *</Label>
                   <Textarea value={anamnese.frequent_pain} onChange={e => setAnamnese(a => ({ ...a, frequent_pain: e.target.value }))} placeholder="Ex: Dor no joelho direito, lombar..." rows={2} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Medicamentos contínuos</Label>
+                  <Label className={!anamnese.medications.trim() ? 'text-red-600 dark:text-red-400' : ''}>Medicamentos contínuos *</Label>
                   <Textarea value={anamnese.medications} onChange={e => setAnamnese(a => ({ ...a, medications: e.target.value }))} placeholder="Liste medicamentos com dosagem..." rows={2} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Histórico de saúde geral</Label>
+                  <Label className={!anamnese.health_history.trim() ? 'text-red-600 dark:text-red-400' : ''}>Histórico de saúde geral *</Label>
                   <Textarea value={anamnese.health_history} onChange={e => setAnamnese(a => ({ ...a, health_history: e.target.value }))} placeholder="Cirurgias, internações, etc." rows={2} />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Já realizou acompanhamento nutricional ou treinamento antes?</Label>
+                  <Label className={!anamnese.previous_coaching.trim() ? 'text-red-600 dark:text-red-400' : ''}>Já realizou acompanhamento nutricional ou treinamento antes? *</Label>
                   <Textarea value={anamnese.previous_coaching} onChange={e => setAnamnese(a => ({ ...a, previous_coaching: e.target.value }))} placeholder="Descreva experiências anteriores..." rows={2} />
                 </div>
               </CardContent>
             </Card>
           )}
 
-          {/* ── STEP 5: Comportamento + Observações + Confirmação ── */}
+          {/* ── STEP 5: Fotos Corporais ── */}
           {anamneseStep === 5 && (
+            <Card>
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-semibold text-muted-foreground uppercase tracking-wide">
+                  Fotos Corporais Iniciais
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/50 rounded-xl px-4 py-3">
+                  <p className="text-xs text-blue-700 dark:text-blue-400">
+                    Envie fotos de frente, lado e costas para que seu profissional acompanhe sua evolução. As fotos são visíveis apenas para você e seu profissional.
+                  </p>
+                </div>
+
+                <div className="grid grid-cols-3 gap-3">
+                  {([
+                    { type: 'front' as const, label: 'Frente', ref: frontRef },
+                    { type: 'side' as const,  label: 'Lado',   ref: sideRef },
+                    { type: 'back' as const,  label: 'Costas', ref: backRef },
+                  ]).map(({ type, label, ref }) => (
+                    <div key={type} className="flex flex-col items-center gap-2">
+                      <p className="text-xs font-medium text-foreground">{label}</p>
+                      <div
+                        className="relative w-full aspect-[3/4] rounded-xl border-2 border-dashed border-border bg-muted/30 flex items-center justify-center overflow-hidden cursor-pointer hover:border-primary/40 transition-colors"
+                        onClick={() => ref.current?.click()}
+                      >
+                        {uploadingPhoto === type ? (
+                          <Loader2 className="w-6 h-6 text-muted-foreground animate-spin" />
+                        ) : bodyPhotos[type] ? (
+                          <img
+                            src={bodyPhotos[type]!}
+                            alt={`Foto ${label}`}
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex flex-col items-center gap-1.5 text-muted-foreground">
+                            <Upload className="w-5 h-5" />
+                            <span className="text-[10px]">Enviar</span>
+                          </div>
+                        )}
+                      </div>
+                      <input
+                        ref={ref}
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={e => handleBodyPhoto(e, type)}
+                      />
+                      {bodyPhotos[type] && (
+                        <div className="flex gap-1.5">
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-[10px] gap-1 px-2"
+                            onClick={() => ref.current?.click()}
+                          >
+                            <Camera className="w-3 h-3" /> Trocar
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            size="sm"
+                            className="h-7 text-[10px] gap-1 px-2 text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/30"
+                            onClick={() => deleteBodyPhoto(type)}
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Galeria com data */}
+                {(bodyPhotos.front || bodyPhotos.side || bodyPhotos.back) && (
+                  <div className="flex items-center gap-2 pt-2 border-t border-border">
+                    <ImageIcon className="w-4 h-4 text-muted-foreground" />
+                    <span className="text-xs text-muted-foreground">
+                      {[bodyPhotos.front, bodyPhotos.side, bodyPhotos.back].filter(Boolean).length} de 3 fotos enviadas
+                    </span>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
+          {/* ── STEP 6: Comportamento + Observações + Confirmação ── */}
+          {anamneseStep === 6 && (
             <>
               <Card>
                 <CardHeader className="pb-3">
@@ -1384,7 +1703,7 @@ export default function PerfilPage() {
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <Label>Maior dificuldade hoje</Label>
+                    <Label className={!anamnese.biggest_difficulty ? 'text-red-600 dark:text-red-400' : ''}>Maior dificuldade hoje *</Label>
                     <Select value={anamnese.biggest_difficulty || 'none'} onValueChange={v => setAnamnese(a => ({ ...a, biggest_difficulty: v === 'none' ? '' : v }))}>
                       <SelectTrigger><SelectValue placeholder="Selecione" /></SelectTrigger>
                       <SelectContent>
@@ -1398,7 +1717,7 @@ export default function PerfilPage() {
                     </Select>
                   </div>
                   <div className="space-y-1.5">
-                    <Label>O que te fez buscar a LBFIT neste momento?</Label>
+                    <Label className={!anamnese.motivation_reason.trim() ? 'text-red-600 dark:text-red-400' : ''}>O que te fez buscar a LBFIT neste momento? *</Label>
                     <Textarea value={anamnese.motivation_reason} onChange={e => setAnamnese(a => ({ ...a, motivation_reason: e.target.value }))} placeholder="Conte sua motivação..." rows={3} />
                   </div>
                 </CardContent>
@@ -1441,12 +1760,12 @@ export default function PerfilPage() {
               <ChevronLeft className="w-4 h-4" /> Voltar
             </Button>
 
-            <span className="text-xs text-muted-foreground">{anamneseStep} / 5</span>
+            <span className="text-xs text-muted-foreground">{anamneseStep} / 6</span>
 
-            {anamneseStep < 5 ? (
+            {anamneseStep < 6 ? (
               <Button
                 type="button"
-                onClick={() => setAnamneseStep(s => Math.min(5, s + 1))}
+                onClick={() => setAnamneseStep(s => Math.min(6, s + 1))}
                 className="gap-2 bg-emerald-600 hover:bg-emerald-700 text-white"
               >
                 Próximo <ChevronRight className="w-4 h-4" />
