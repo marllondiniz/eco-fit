@@ -28,27 +28,39 @@ const DIAS = [
 ] as const
 
 const DIVISION_LABELS: Record<string, string[]> = {
-  'A/B':      ['A', 'B'],
-  'A/B/C':    ['A', 'B', 'C'],
-  'FullBody':  ['A'],
+  'FullBody':     ['A'],
+  'A/B':          ['A', 'B'],
+  'A/B/C':        ['A', 'B', 'C'],
+  'A/B/C/D':      ['A', 'B', 'C', 'D'],
+  'A/B/C/D/E':    ['A', 'B', 'C', 'D', 'E'],
+  'A/B/C/D/E/F':  ['A', 'B', 'C', 'D', 'E', 'F'],
 }
 
 const DIVISION_DISPLAY: Record<string, string> = {
-  'A/B':      'A/B — 2 treinos alternados',
-  'A/B/C':    'A/B/C — 3 treinos rotativos',
-  'FullBody':  'Full Body — 1 treino completo',
+  'FullBody':     'Full Body — 1 treino completo',
+  'A/B':          'A/B — Upper/Lower ou 2 alternados',
+  'A/B/C':        'A/B/C — PPL ou 3 rotativos',
+  'A/B/C/D':      'A/B/C/D — 4 divisões (UL 2x, PPL+Upper, etc.)',
+  'A/B/C/D/E':    'A/B/C/D/E — 5 divisões (ABCDE, PPL+UL, etc.)',
+  'A/B/C/D/E/F':  'A/B/C/D/E/F — 6 divisões (PPL 2x, especialização)',
 }
 
 const DEFAULT_SCHEDULES: Record<string, Record<string, string | null>> = {
-  'A/B':     { mon: 'A', tue: 'B', wed: null, thu: 'A', fri: 'B', sat: null, sun: null },
-  'A/B/C':   { mon: 'A', tue: 'B', wed: 'C', thu: 'A', fri: 'B', sat: 'C', sun: null },
-  'FullBody': { mon: 'A', tue: null, wed: 'A', thu: null, fri: 'A', sat: null, sun: null },
+  'FullBody':     { mon: 'A', tue: null, wed: 'A', thu: null, fri: 'A', sat: null, sun: null },
+  'A/B':          { mon: 'A', tue: 'B', wed: null, thu: 'A', fri: 'B', sat: null, sun: null },
+  'A/B/C':        { mon: 'A', tue: 'B', wed: 'C', thu: 'A', fri: 'B', sat: 'C', sun: null },
+  'A/B/C/D':      { mon: 'A', tue: 'B', wed: null, thu: 'C', fri: 'D', sat: null, sun: null },
+  'A/B/C/D/E':    { mon: 'A', tue: 'B', wed: 'C', thu: 'D', fri: 'E', sat: null, sun: null },
+  'A/B/C/D/E/F':  { mon: 'A', tue: 'B', wed: 'C', thu: 'D', fri: 'E', sat: 'F', sun: null },
 }
 
 const LABEL_COLORS: Record<string, string> = {
   A: 'bg-blue-100 dark:bg-blue-900/50 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800',
   B: 'bg-violet-100 dark:bg-violet-900/50 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-800',
   C: 'bg-emerald-100 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800',
+  D: 'bg-amber-100 dark:bg-amber-900/50 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-800',
+  E: 'bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-800',
+  F: 'bg-cyan-100 dark:bg-cyan-900/50 text-cyan-700 dark:text-cyan-300 border-cyan-200 dark:border-cyan-800',
 }
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
@@ -185,46 +197,53 @@ function PlanoForm() {
     setGerandoIA(true)
     setErroIA(null)
 
-    // Buscar dados da anamnese para enriquecer o prompt
     const [{ data: profile }, { data: anamnese }] = await Promise.all([
       supabase
         .from('client_profiles')
-        .select('goal, activity_level, training_experience, age, sex')
+        .select('goal, activity_level, age, sex')
         .eq('user_id', clienteId)
         .maybeSingle(),
       supabase
         .from('client_anamnese')
-        .select('injuries, diseases, training_location, weekly_availability, notes')
+        .select('*')
         .eq('user_id', clienteId)
         .maybeSingle(),
     ])
+
+    const a = (anamnese ?? {}) as Record<string, any>
 
     const GOAL_PT: Record<string, string> = {
       weight_loss: 'Emagrecimento', muscle_gain: 'Ganho de massa',
       maintenance: 'Manutenção', health: 'Saúde geral',
       performance: 'Performance', rehabilitation: 'Reabilitação',
     }
-    const LEVEL_PT: Record<string, string> = {
-      sedentary: 'Sedentário', light: 'Iniciante', moderate: 'Intermediário',
-      intense: 'Avançado', athlete: 'Atleta',
-    }
 
-    const restricoes = [anamnese?.injuries, anamnese?.diseases]
+    const restricoes = [a.injuries, a.diseases, a.frequent_pain]
       .filter(Boolean).join('; ') || 'Nenhuma'
+
+    const nivelLabel = a.training_experience ?? ''
+
+    const tempoSessao = a.session_duration_min
+      ? `${a.session_duration_min} minutos`
+      : ''
 
     try {
       const res = await fetch('/api/ai/plano-treino', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          divisao:         divisionType,
-          clienteNome:     clienteName,
-          objetivo:        GOAL_PT[profile?.goal ?? ''] ?? profile?.goal ?? '',
-          nivel:           LEVEL_PT[profile?.activity_level ?? ''] ?? (anamnese as any)?.training_experience ?? '',
+          divisao:           divisionType,
+          clienteNome:       clienteName,
+          objetivo:          GOAL_PT[profile?.goal ?? ''] ?? profile?.goal ?? '',
+          nivel:             nivelLabel,
           restricoes,
-          localTreino:     anamnese?.training_location ?? '',
-          disponibilidade: anamnese?.weekly_availability ?? '',
-          observacoes:     anamnese?.notes ?? '',
+          localTreino:       a.training_location ?? '',
+          disponibilidade:   a.weekly_availability ?? '',
+          tempoSessao,
+          modalidadesExtras: a.additional_modalities ?? '',
+          prioridadesMusc:   a.muscle_priorities ?? '',
+          observacoes:       [a.notes, a.home_equipment ? `Equipamentos: ${a.home_equipment}` : ''].filter(Boolean).join('. '),
+          duracaoSemanas:    durationWeeks,
         }),
       })
 
@@ -424,8 +443,11 @@ function PlanoForm() {
                 <SelectContent>
                   <SelectItem value="1">1 semana</SelectItem>
                   <SelectItem value="2">2 semanas</SelectItem>
+                  <SelectItem value="3">3 semanas</SelectItem>
                   <SelectItem value="4">4 semanas</SelectItem>
+                  <SelectItem value="6">6 semanas</SelectItem>
                   <SelectItem value="8">8 semanas</SelectItem>
+                  <SelectItem value="10">10 semanas</SelectItem>
                   <SelectItem value="12">12 semanas</SelectItem>
                   <SelectItem value="16">16 semanas</SelectItem>
                 </SelectContent>

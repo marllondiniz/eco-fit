@@ -25,6 +25,13 @@ export interface Invitation {
   created_at: string
 }
 
+export interface DietSupplement {
+  name: string
+  dose: string
+  schedule: string
+  notes: string
+}
+
 export interface Diet {
   id: string
   professional_id: string
@@ -33,6 +40,7 @@ export interface Diet {
   objective: string | null
   methodology: string | null
   notes: string | null
+  supplements?: DietSupplement[]
   status: PlanStatus
   sent_at: string | null
   created_at: string
@@ -49,11 +57,18 @@ export interface DietMeal {
   order_index: number
 }
 
+export interface FoodSubstitution {
+  name: string
+  quantity: string
+  unit: string
+}
+
 export interface DietFood {
   name: string
   quantity: string
   unit: string
   calories?: number
+  substitutions?: FoodSubstitution[]
 }
 
 export interface Workout {

@@ -18,11 +18,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Apenas clientes podem solicitar planos.' }, { status: 403 })
   }
 
-  // Ler tipo do body (workout | diet | both) — padrão: 'both'
-  let requestType: 'workout' | 'diet' | 'both' = 'both'
+  // Ler tipo do body (workout | diet | both | cardio) — padrão: 'both'
+  let requestType: 'workout' | 'diet' | 'both' | 'cardio' = 'both'
   try {
     const body = await req.json()
-    if (body?.type && ['workout', 'diet', 'both'].includes(body.type)) {
+    if (body?.type && ['workout', 'diet', 'both', 'cardio'].includes(body.type)) {
       requestType = body.type
     }
   } catch {
@@ -31,7 +31,7 @@ export async function POST(req: NextRequest) {
 
   const today = new Date().toISOString().slice(0, 10)
 
-  // Verificar plano ativo de treino (se solicitando treino ou ambos)
+  // Verificar plano ativo de treino (se solicitando treino ou ambos) — NÃO para cardio só
   if (requestType === 'workout' || requestType === 'both') {
     const { data: activePlan } = await supabase
       .from('workouts')
@@ -45,6 +45,25 @@ export async function POST(req: NextRequest) {
     if (activePlan) {
       return NextResponse.json(
         { error: 'Você já tem um plano de treino ativo. Aguarde o término para solicitar um novo.' },
+        { status: 400 }
+      )
+    }
+  }
+
+  // Verificar plano ativo de cardio (se solicitando só cardio)
+  if (requestType === 'cardio') {
+    const { data: activeCardio } = await supabase
+      .from('cardio_plans')
+      .select('id')
+      .eq('client_id', user.id)
+      .eq('status', 'sent')
+      .or(`end_date.is.null,end_date.gte.${today}`)
+      .limit(1)
+      .maybeSingle()
+
+    if (activeCardio) {
+      return NextResponse.json(
+        { error: 'Você já tem um plano de cardio ativo. Aguarde o término para solicitar um novo.' },
         { status: 400 }
       )
     }
@@ -73,7 +92,9 @@ export async function POST(req: NextRequest) {
   const typeFilter =
     requestType === 'both'
       ? ['workout', 'diet', 'both']
-      : [requestType, 'both']
+      : requestType === 'cardio'
+        ? ['cardio']
+        : [requestType, 'both']
 
   const { data: existing } = await supabase
     .from('plan_requests')
@@ -109,8 +130,12 @@ export async function POST(req: NextRequest) {
   if (invite?.invited_by) {
     professionalId = invite.invited_by
   } else {
-    // Fallback: último treino ou dieta enviado
-    const [{ data: lastWorkout }, { data: lastDiet }] = await Promise.all([
+    // Fallback: último treino, dieta ou cardio enviado
+    const [
+      { data: lastWorkout },
+      { data: lastDiet },
+      { data: lastCardio },
+    ] = await Promise.all([
       supabase
         .from('workouts')
         .select('professional_id')
@@ -125,8 +150,15 @@ export async function POST(req: NextRequest) {
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle(),
+      supabase
+        .from('cardio_plans')
+        .select('professional_id')
+        .eq('client_id', user.id)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle(),
     ])
-    professionalId = lastWorkout?.professional_id ?? lastDiet?.professional_id ?? null
+    professionalId = lastWorkout?.professional_id ?? lastDiet?.professional_id ?? lastCardio?.professional_id ?? null
   }
 
   const { data: request, error } = await supabase

@@ -7,7 +7,6 @@ import {
   getLocalWeekStart,
   getLocalMonthStart,
   getLocalDayOfWeek,
-  formatDate,
 } from '@/lib/date-utils'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
@@ -22,7 +21,7 @@ import {
   Zap,
   CheckCircle2,
   MoonStar,
-  CalendarDays,
+  Activity,
 } from 'lucide-react'
 import Link from 'next/link'
 
@@ -84,6 +83,10 @@ export function ClienteEvolucaoBlock({
   const hojeDescanso   = hasActivePlan && !treinoDoDia
   const proximoTreino  = hojeDescanso ? getProximoTreino(scheduleMap, todayDow) : null
 
+  const [todayDietSession, setTodayDietSession] = useState<any>(null)
+  const [cardioPlan, setCardioPlan] = useState<any>(null)
+  const [cardioSessionToday, setCardioSessionToday] = useState<any>(null)
+
   useEffect(() => {
     async function load() {
       const today      = getLocalDateString()
@@ -95,6 +98,9 @@ export function ClienteEvolucaoBlock({
         { data: weekData },
         { data: monthData },
         { data: gamiData },
+        { data: dietTodayData },
+        { data: cardioPlanData },
+        { data: cardioTodayData },
       ] = await Promise.all([
         supabase
           .from('workout_sessions')
@@ -114,12 +120,43 @@ export function ClienteEvolucaoBlock({
           .gte('date', monthStart)
           .lte('date', today),
         supabase.from('user_gamification').select('*').eq('user_id', userId).maybeSingle(),
+        supabase
+          .from('diet_sessions')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('date', today)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('cardio_plans')
+          .select('id, prescription')
+          .eq('client_id', userId)
+          .eq('status', 'sent')
+          .or(`end_date.is.null,end_date.gte.${today}`)
+          .order('sent_at', { ascending: false })
+          .limit(1)
+          .maybeSingle(),
+        supabase
+          .from('cardio_sessions')
+          .select('*')
+          .eq('user_id', userId)
+          .eq('date', today),
       ])
+
+      const plan = cardioPlanData ?? null
+      const sessionsToday = (cardioTodayData ?? []) as any[]
+      const sessionForPlan = plan
+        ? sessionsToday.find((s: any) => s.cardio_plan_id === plan.id) ?? null
+        : null
 
       setTodaySession(todayData ?? [])
       setWeek(weekData ?? [])
       setMonth(monthData ?? [])
       setGamification(gamiData ?? null)
+      setTodayDietSession(dietTodayData ?? null)
+      setCardioPlan(plan)
+      setCardioSessionToday(sessionForPlan)
       setLoading(false)
     }
     load()
@@ -137,6 +174,12 @@ export function ClienteEvolucaoBlock({
   const totalXP          = gamification?.total_xp ?? 0
   const level            = gamification?.level ?? 1
   const hasActivityToday = todaySession.length > 0
+  const dietStreak       = gamification?.diet_streak_days ?? 0
+  const totalDietDays    = gamification?.total_diet_sessions ?? 0
+  const dietHojeDone     = todayDietSession?.is_complete ?? false
+  const dietMealsDone    = todayDietSession?.completed_count ?? 0
+  const dietMealsTotal   = todayDietSession?.total_meals ?? 0
+  const dietPctHoje      = dietMealsTotal > 0 ? Math.round((dietMealsDone / dietMealsTotal) * 100) : 0
 
   // Progresso do treino de hoje
   const todaySessForTreino = treinoDoDia
@@ -265,7 +308,7 @@ export function ClienteEvolucaoBlock({
       ) : null}
 
       {/* ── Métricas de evolução ──────────────────────────────────────── */}
-      {(gamification || hasActivityToday) && (
+      {(gamification || hasActivityToday || totalDietDays > 0 || dietStreak > 0) && (
         <div className="bg-gradient-to-br from-emerald-50 to-blue-50 dark:from-emerald-950/30 dark:to-blue-950/30 border border-emerald-100 dark:border-emerald-900/50 rounded-2xl p-5 space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
@@ -309,7 +352,15 @@ export function ClienteEvolucaoBlock({
               <div className="flex items-center gap-1.5">
                 <Flame className="w-4 h-4 text-orange-500" />
                 <span className="text-xs font-semibold text-foreground">
-                  {streak} {streak === 1 ? 'dia seguido' : 'dias seguidos'}
+                  {streak} {streak === 1 ? 'dia seguido' : 'dias seguidos'} treino
+                </span>
+              </div>
+            )}
+            {dietStreak > 0 && (
+              <div className="flex items-center gap-1.5">
+                <Utensils className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span className="text-xs font-semibold text-foreground">
+                  {dietStreak} {dietStreak === 1 ? 'dia seguido' : 'dias seguidos'} dieta
                 </span>
               </div>
             )}
@@ -326,7 +377,15 @@ export function ClienteEvolucaoBlock({
                 <Trophy className="w-4 h-4 text-amber-500" />
                 <span className="text-xs font-semibold text-foreground">
                   {gamification.total_sessions}{' '}
-                  {gamification.total_sessions === 1 ? 'sessão' : 'sessões'} completas
+                  {gamification.total_sessions === 1 ? 'sessão' : 'sessões'} treino
+                </span>
+              </div>
+            )}
+            {totalDietDays > 0 && (
+              <div className="flex items-center gap-1.5">
+                <Trophy className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                <span className="text-xs font-semibold text-foreground">
+                  {totalDietDays} {totalDietDays === 1 ? 'dia' : 'dias'} dieta cumpridos
                 </span>
               </div>
             )}
@@ -334,55 +393,156 @@ export function ClienteEvolucaoBlock({
         </div>
       )}
 
-      {/* ── Dietas ativas ─────────────────────────────────────────────── */}
-      {dietas.length > 0 && (
-        <Card>
-          <CardContent className="p-5">
-            <div className="flex items-center justify-between mb-3">
-              <div className="flex items-center gap-2">
-                <Utensils className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span className="text-sm font-semibold text-foreground">Minha Dieta</span>
+      {/* ── Cardio hoje (mesmo layout do Treino de hoje) ─────────────────── */}
+      {cardioPlan && (
+        <Card className={cardioSessionToday?.is_complete
+          ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20'
+          : 'border-primary/20 bg-primary/5'
+        }>
+          <CardContent className="p-5 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 ${
+                  cardioSessionToday?.is_complete
+                    ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-primary/15 text-primary'
+                }`}>
+                  {cardioSessionToday?.is_complete ? (
+                    <CheckCircle2 className="w-6 h-6" />
+                  ) : (
+                    <Activity className="w-6 h-6" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Cardio de hoje
+                  </p>
+                  <p className="text-base font-bold text-foreground line-clamp-2">
+                    {cardioPlan.prescription || 'Sem descrição.'}
+                  </p>
+                </div>
               </div>
-              <Link
-                href="/cliente/dietas"
-                className="text-xs text-primary hover:opacity-90 font-medium flex items-center gap-1"
-              >
-                Ver dieta <ArrowRight className="w-3 h-3" />
-              </Link>
+              {cardioSessionToday?.is_complete ? (
+                <Badge className="bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border-0 flex-shrink-0">
+                  Concluído ✓
+                </Badge>
+              ) : (
+                <span className="text-sm font-bold text-primary flex-shrink-0">0%</span>
+              )}
             </div>
-            <ul className="divide-y divide-border">
-              {dietas.map((dieta: any) => (
-                <li key={dieta.id} className="flex items-center justify-between py-2.5">
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-foreground truncate">{dieta.name}</p>
-                    {dieta.profiles?.full_name && (
-                      <p className="text-xs text-muted-foreground mt-0.5">
-                        Por {dieta.profiles.full_name}
-                        {dieta.sent_at ? ` · ${formatDate(dieta.sent_at)}` : ''}
-                      </p>
-                    )}
-                  </div>
-                  <Badge className="ml-3 flex-shrink-0 bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border-0 text-xs">
-                    Ativo
-                  </Badge>
-                </li>
-              ))}
-            </ul>
+
+            {/* Barra de progresso (igual ao treino: 0 de 1 / 1 de 1) */}
+            <div>
+              <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
+                <span>
+                  {cardioSessionToday?.is_complete ? '1 de 1 atividade' : '0 de 1 atividade'}
+                </span>
+                {!cardioSessionToday?.is_complete && <span>Falta 1</span>}
+              </div>
+              <div className="w-full bg-muted rounded-full h-2">
+                <div
+                  className={`h-2 rounded-full transition-all duration-500 ${
+                    cardioSessionToday?.is_complete
+                      ? 'bg-gradient-to-r from-emerald-500 to-emerald-400'
+                      : 'bg-gradient-to-r from-primary to-primary/70'
+                  }`}
+                  style={{ width: cardioSessionToday?.is_complete ? '100%' : '0%' }}
+                />
+              </div>
+            </div>
+
+            <Link
+              href="/cliente/cardio"
+              className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-90 ${
+                cardioSessionToday?.is_complete
+                  ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-primary text-primary-foreground'
+              }`}
+            >
+              {cardioSessionToday?.is_complete ? 'Ver cardio completo' : 'Ir para o cardio de hoje'}
+              <ArrowRight className="w-4 h-4" />
+            </Link>
           </CardContent>
         </Card>
       )}
 
-      {/* ── Estado zero: sem plano ────────────────────────────────────── */}
-      {!hasActivePlan && dietas.length === 0 && (
-        <div className="flex flex-col items-center gap-3 py-10 text-center">
-          <CalendarDays className="w-10 h-10 text-muted-foreground/40" />
-          <div>
-            <p className="text-muted-foreground font-medium">Nenhum plano disponível ainda.</p>
-            <p className="text-sm text-muted-foreground mt-1">
-              Seus planos aparecerão aqui quando o profissional enviá-los.
-            </p>
-          </div>
-        </div>
+      {/* ── Dieta de hoje (mesmo layout do Treino e Cardio) ───────────────── */}
+      {dietas.length > 0 && (
+        <Card className={dietHojeDone
+          ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20'
+          : 'border-primary/20 bg-primary/5'
+        }>
+          <CardContent className="p-5 space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className={`w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 ${
+                  dietHojeDone
+                    ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400'
+                    : 'bg-primary/15 text-primary'
+                }`}>
+                  {dietHojeDone ? (
+                    <CheckCircle2 className="w-6 h-6" />
+                  ) : (
+                    <Utensils className="w-6 h-6" />
+                  )}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+                    Dieta de hoje
+                  </p>
+                  <p className="text-base font-bold text-foreground truncate">
+                    {dietas[0]?.name ?? 'Minha Dieta'}
+                  </p>
+                </div>
+              </div>
+              {dietHojeDone ? (
+                <Badge className="bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border-0 flex-shrink-0">
+                  Concluído ✓
+                </Badge>
+              ) : (
+                <span className="text-sm font-bold text-primary flex-shrink-0">
+                  {dietMealsTotal > 0 ? `${dietPctHoje}%` : '0%'}
+                </span>
+              )}
+            </div>
+
+            {/* Barra de progresso (igual ao treino/cardio) */}
+            <div>
+              <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
+                <span>
+                  {dietMealsTotal > 0
+                    ? `${dietMealsDone} de ${dietMealsTotal} refeições`
+                    : '0 de 0 refeições'}
+                </span>
+                {!dietHojeDone && dietMealsTotal > 0 && (
+                  <span>Faltam {dietMealsTotal - dietMealsDone}</span>
+                )}
+              </div>
+              <div className="w-full bg-muted rounded-full h-2">
+                <div
+                  className={`h-2 rounded-full transition-all duration-500 ${
+                    dietHojeDone
+                      ? 'bg-gradient-to-r from-emerald-500 to-emerald-400'
+                      : 'bg-gradient-to-r from-primary to-primary/70'
+                  }`}
+                  style={{ width: `${dietMealsTotal > 0 ? (dietHojeDone ? 100 : dietPctHoje) : 0}%` }}
+                />
+              </div>
+            </div>
+
+            <Link
+              href="/cliente/dietas"
+              className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-90 ${
+                dietHojeDone
+                  ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
+                  : 'bg-primary text-primary-foreground'
+              }`}
+            >
+              {dietHojeDone ? 'Ver dieta completa' : 'Ir para a dieta de hoje'}
+              <ArrowRight className="w-4 h-4" />
+            </Link>
+          </CardContent>
+        </Card>
       )}
 
     </div>

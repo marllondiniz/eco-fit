@@ -60,53 +60,51 @@ export async function POST(req: NextRequest) {
   }
 
   const nome = nameRow?.full_name ?? 'Cliente'
-  const prof = profileData ?? {}
-  const anam = anamneseData ?? {}
-  const goal = (prof as { goal?: string }).goal
-  const activity = (prof as { activity_level?: string }).activity_level
-  const age = (prof as { age?: number }).age
-  const weight = (prof as { weight_kg?: number }).weight_kg
-  const height = (prof as { height_cm?: number }).height_cm
+  const prof = (profileData ?? {}) as Record<string, any>
+  const a = (anamneseData ?? {}) as Record<string, any>
 
   const partes: string[] = [
     `Nome: ${nome}`,
-    `Objetivo: ${goal ? GOAL_LABELS[goal] ?? goal : 'Não informado'}`,
-    `Nível de atividade: ${activity ? ACTIVITY_LABELS[activity] ?? activity : 'Não informado'}`,
+    `Objetivo: ${prof.goal ? GOAL_LABELS[prof.goal] ?? prof.goal : 'Não informado'}`,
+    `Nível de atividade: ${prof.activity_level ? ACTIVITY_LABELS[prof.activity_level] ?? prof.activity_level : 'Não informado'}`,
   ]
-  if (age != null) partes.push(`Idade: ${age} anos`)
-  if (weight != null) partes.push(`Peso: ${weight} kg`)
-  if (height != null) partes.push(`Altura: ${height} cm`)
-  if ((anam as { health_history?: string }).health_history) {
-    partes.push(`Histórico de saúde: ${(anam as { health_history: string }).health_history}`)
-  }
-  if ((anam as { injuries?: string }).injuries) {
-    partes.push(`Lesões/limitações: ${(anam as { injuries: string }).injuries}`)
-  }
-  if ((anam as { diseases?: string }).diseases) {
-    partes.push(`Doenças: ${(anam as { diseases: string }).diseases}`)
-  }
-  if ((anam as { medications?: string }).medications) {
-    partes.push(`Medicamentos: ${(anam as { medications: string }).medications}`)
-  }
-  if ((anam as { training_experience?: string }).training_experience) {
-    partes.push(`Experiência de treino: ${(anam as { training_experience: string }).training_experience}`)
-  }
-  if ((anam as { weekly_availability?: string }).weekly_availability) {
-    partes.push(`Disponibilidade: até ${(anam as { weekly_availability: string }).weekly_availability}x/semana`)
-  }
-  if ((anam as { training_location?: string }).training_location) {
-    partes.push(`Local de treino: ${(anam as { training_location: string }).training_location}`)
-  }
-  if ((anam as { meals_per_day?: string }).meals_per_day) {
-    partes.push(`Refeições por dia: ${(anam as { meals_per_day: string }).meals_per_day}`)
-  }
-  if ((anam as { notes?: string }).notes) {
-    partes.push(`Observações: ${(anam as { notes: string }).notes}`)
-  }
+  if (prof.age != null) partes.push(`Idade: ${prof.age} anos`)
+  if (prof.weight_kg != null) partes.push(`Peso: ${prof.weight_kg} kg`)
+  if (prof.height_cm != null) partes.push(`Altura: ${prof.height_cm} cm`)
+  if (prof.sex) partes.push(`Sexo: ${prof.sex}`)
+  if (a.training_experience) partes.push(`Experiência: ${a.training_experience}`)
+  if (a.weekly_availability) partes.push(`Disponibilidade: ${a.weekly_availability}x/semana`)
+  if (a.session_duration_min) partes.push(`Tempo por sessão: ${a.session_duration_min} min`)
+  if (a.training_location) partes.push(`Local: ${a.training_location}`)
+  if (a.home_equipment) partes.push(`Equipamentos: ${a.home_equipment}`)
+  if (a.injuries) partes.push(`Lesões: ${a.injuries}`)
+  if (a.frequent_pain) partes.push(`Dores frequentes: ${a.frequent_pain}`)
+  if (a.diseases) partes.push(`Condições: ${a.diseases}`)
+  if (a.medications) partes.push(`Medicamentos: ${a.medications}`)
+  if (a.additional_modalities) partes.push(`Modalidades adicionais: ${a.additional_modalities}`)
+  if (a.does_aerobic === 'Sim') partes.push(`Aeróbico: ${a.aerobic_type ?? 'Sim'} ${a.aerobic_frequency ? `(${a.aerobic_frequency})` : ''}`)
+  if (a.muscle_priorities) partes.push(`Prioridades musculares: ${a.muscle_priorities}`)
+  if (a.secondary_goal) partes.push(`Objetivo secundário: ${a.secondary_goal}`)
+  if (a.can_train_twice_daily) partes.push('Pode treinar 2x ao dia')
+  if (a.preferred_training_time) partes.push(`Horário de treino: ${a.preferred_training_time}`)
+  if (a.trains_fasted) partes.push(`Treina em jejum: ${a.trains_fasted}`)
+  if (a.discipline_level != null) partes.push(`Disciplina (0-10): ${a.discipline_level}`)
+  if (a.biggest_difficulty) partes.push(`Maior dificuldade: ${a.biggest_difficulty}`)
+  if (a.notes) partes.push(`Observações: ${a.notes}`)
 
   const contexto = partes.join('\n')
 
-  const prompt = `Você é um personal trainer. Com base nos dados do cliente abaixo, sugira um planejamento semanal de treinos como RASCUNHO para o personal revisar e aprovar.
+  const prompt = `Você é a IA de treinamento LBFIT. Com base nos dados do cliente e no PROTOCOLO LBFIT, sugira um planejamento semanal como RASCUNHO para o personal revisar.
+
+PROTOCOLO LBFIT — Diretrizes de Divisão por Frequência:
+1x/sem → Full Body obrigatório
+2x/sem → Full Body ou Upper/Lower
+3x/sem → Full Body / UL + Full / PPL rotativo
+4x/sem → UL 2x / PPL + Upper / Superior-Inferior / 4x Full Body
+5x/sem → PPL + UL / ABCDE / Superior-Inferior-Push-Pull-Legs / 5x Full Body
+6–7x/sem → PPL 2x / Especializações / Divisões híbridas / Full Body com volume diluído
+
+Considerar: recuperação, modalidades externas (reduzir volume nos grupamentos mais exigidos), prioridades musculares (aumentar volume +20-40%), lesões (reduzir volume -30-50% + ajuste biomecânico).
 
 Dados do cliente:
 ${contexto}
@@ -123,12 +121,12 @@ Retorne APENAS um JSON válido (sem markdown, sem explicações) no formato:
 }
 
 Regras:
-- tipo_divisao: use "A/B" para 2 dias de treino por semana, "A/B/C" para 3 (ou 4-6 alternando), "Full Body" para treino full body (pode mapear para um único rótulo ou A/B conforme dias).
-- Para "Full Body", sugira semana com um mesmo rótulo em vários dias (ex.: todos A) ou A/B alternado; o personal vai usar a grade A/B/C.
-- Respeite lesões e limitações: menos dias ou descanso onde fizer sentido.
-- Número de dias de treino por semana deve ser coerente com objetivo e nível (ex.: iniciante 2-3, intermediário 3-4, avançado 4-5).
-- "semana" deve ter exatamente 7 objetos, um para cada day: mon, tue, wed, thu, fri, sat, sun. label null = descanso.
-- nomes_treinos: sugestões curtas em português (ex.: "Superiores", "Inferiores", "Core e Cardio").`
+- tipo_divisao: use "A/B" para 2 dias, "A/B/C" para 3+, "Full Body" para full body.
+- Respeite as diretrizes de frequência do protocolo LBFIT.
+- Respeite lesões e limitações.
+- O número de dias de treino deve ser coerente com a frequência informada.
+- "semana" deve ter exatamente 7 objetos. label null = descanso.
+- nomes_treinos: sugestões curtas em português (ex.: "Superiores", "Inferiores", "Full Body").`
 
   try {
     const response = await fetch('https://api.openai.com/v1/chat/completions', {

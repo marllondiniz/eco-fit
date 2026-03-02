@@ -95,6 +95,7 @@ export default function ClienteTreinosPage() {
   const [confirmingPrevious, setConfirmingPrevious] = useState(false)
   const [planejamentoView, setPlanejamentoView] = useState<'week' | 'month'>('week')
   const [scheduleMap, setScheduleMap] = useState<Record<string, string | null>>({})
+  const [pendingRequest, setPendingRequest] = useState(false)
   const [selectedDay, setSelectedDay] = useState<{
     label: string | null   // e.g. 'A', 'B', null = descanso
     dayName: string        // e.g. 'Quinta-feira'
@@ -130,6 +131,7 @@ export default function ClienteTreinosPage() {
       { data: sessionsYesterday },
       { data: gamiData },
       { data: scheduleRows },
+      { data: requestData },
     ] = await Promise.all([
       supabase
         .from('workouts')
@@ -157,6 +159,14 @@ export default function ClienteTreinosPage() {
         .select('day_of_week, workout_label')
         .eq('client_id', user.id)
         .order('day_of_week'),
+      supabase
+        .from('plan_requests')
+        .select('id')
+        .eq('client_id', user.id)
+        .in('status', ['pending', 'in_progress'])
+        .in('type', ['workout', 'both'])
+        .limit(1)
+        .maybeSingle(),
     ])
 
     const treinosList = treinosData ?? []
@@ -173,6 +183,7 @@ export default function ClienteTreinosPage() {
     }
     setSessions(sessionMap)
     setGamification(gamiData ?? null)
+    setPendingRequest(!!requestData)
     setLoading(false)
 
     const incompleteYesterday = (sessionsYesterday ?? []).filter((s: Session) => !s.is_complete)
@@ -391,7 +402,16 @@ export default function ClienteTreinosPage() {
                 Solicite um plano ao seu personal.
               </p>
             </div>
-            <SolicitarTreinoButton />
+            {!pendingRequest && (
+              <SolicitarTreinoButton />
+            )}
+            {pendingRequest && (
+              <div className="flex justify-center">
+                <Badge variant="outline" className="bg-amber-50 dark:bg-amber-950/30 text-amber-700 dark:text-amber-400 border-amber-200 dark:border-amber-700">
+                  Solicitação em andamento
+                </Badge>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}
@@ -410,9 +430,9 @@ export default function ClienteTreinosPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Hoje: Treino X ou Descanso */}
-            <div className="rounded-xl bg-primary/10 border border-primary/20 p-4">
+            <div className="rounded-xl bg-primary/10 border border-primary/20 p-4 min-h-[4rem]">
               <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Hoje</p>
-              <p className="text-lg font-bold text-foreground">
+              <p className="text-lg sm:text-xl font-bold text-foreground">
                 {scheduleLabelToday ? (
                   <>Treino {scheduleLabelToday}</>
                 ) : (
@@ -425,11 +445,11 @@ export default function ClienteTreinosPage() {
             </div>
 
             {/* Abas Semana | Mês */}
-            <div className="flex gap-2 border-b border-border pb-2">
+            <div className="flex gap-2 border-b border-border pb-2 overflow-x-auto [&::-webkit-scrollbar]:hidden">
               <button
                 type="button"
                 onClick={() => setPlanejamentoView('week')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex-shrink-0 px-4 py-2 sm:py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   planejamentoView === 'week'
                     ? 'bg-primary text-primary-foreground'
                     : 'text-muted-foreground hover:bg-muted'
@@ -440,7 +460,7 @@ export default function ClienteTreinosPage() {
               <button
                 type="button"
                 onClick={() => setPlanejamentoView('month')}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                className={`flex-shrink-0 px-4 py-2 sm:py-1.5 rounded-lg text-sm font-medium transition-colors ${
                   planejamentoView === 'month'
                     ? 'bg-primary text-primary-foreground'
                     : 'text-muted-foreground hover:bg-muted'
@@ -450,32 +470,34 @@ export default function ClienteTreinosPage() {
               </button>
             </div>
 
-            {/* Grade semanal */}
+            {/* Grade semanal — scroll horizontal no mobile, grid no desktop */}
             {planejamentoView === 'week' && (
-              <div className="grid grid-cols-7 gap-2">
-                {DIAS_SEMANA.map(({ value, label }) => {
-                  const workoutLabel = displayScheduleMap[value] ?? null
-                  const isToday = value === todayDayOfWeek
-                  const DAY_NAMES: Record<string, string> = { mon: 'Segunda-feira', tue: 'Terça-feira', wed: 'Quarta-feira', thu: 'Quinta-feira', fri: 'Sexta-feira', sat: 'Sábado', sun: 'Domingo' }
-                  return (
-                    <button
-                      key={value}
-                      type="button"
-                      onClick={() => setSelectedDay({ label: workoutLabel, dayName: DAY_NAMES[value] ?? label, isToday })}
-                      className={`rounded-lg border p-3 text-center transition-all hover:shadow-sm active:scale-95 ${
-                        isToday ? 'ring-2 ring-primary bg-primary/10 border-primary/30' : 'bg-muted/30 hover:bg-muted/60'
-                      }`}
-                    >
-                      <p className="text-xs font-semibold text-muted-foreground">{label}</p>
-                      <p className={`text-sm font-bold mt-1 ${workoutLabel ? 'text-foreground' : 'text-muted-foreground'}`}>
-                        {workoutLabel ? `Treino ${workoutLabel}` : 'Descanso'}
-                      </p>
-                      {isToday && (
-                        <span className="inline-block mt-1 text-xs font-medium text-primary">Hoje</span>
-                      )}
-                    </button>
-                  )
-                })}
+              <div className="-mx-4 px-4 sm:mx-0 sm:px-0">
+                <div className="flex gap-2 overflow-x-auto snap-x snap-mandatory pb-2 sm:grid sm:grid-cols-7 sm:overflow-visible sm:pb-0 [&::-webkit-scrollbar]:hidden [scrollbar-width:none]">
+                  {DIAS_SEMANA.map(({ value, label }) => {
+                    const workoutLabel = displayScheduleMap[value] ?? null
+                    const isToday = value === todayDayOfWeek
+                    const DAY_NAMES: Record<string, string> = { mon: 'Segunda-feira', tue: 'Terça-feira', wed: 'Quarta-feira', thu: 'Quinta-feira', fri: 'Sexta-feira', sat: 'Sábado', sun: 'Domingo' }
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        onClick={() => setSelectedDay({ label: workoutLabel, dayName: DAY_NAMES[value] ?? label, isToday })}
+                        className={`flex-shrink-0 w-[4.25rem] sm:w-auto snap-center rounded-lg border p-3 sm:p-3 text-center transition-all hover:shadow-sm active:scale-95 min-h-[4.5rem] flex flex-col items-center justify-center ${
+                          isToday ? 'ring-2 ring-primary bg-primary/10 border-primary/30' : 'bg-muted/30 hover:bg-muted/60'
+                        }`}
+                      >
+                        <p className="text-xs font-semibold text-muted-foreground">{label}</p>
+                        <p className={`text-sm font-bold mt-1 leading-tight break-words ${workoutLabel ? 'text-foreground' : 'text-muted-foreground'}`}>
+                          {workoutLabel ? `Treino ${workoutLabel}` : 'Descanso'}
+                        </p>
+                        {isToday && (
+                          <span className="inline-block mt-1 text-xs font-medium text-primary">Hoje</span>
+                        )}
+                      </button>
+                    )
+                  })}
+                </div>
               </div>
             )}
 
@@ -515,7 +537,7 @@ export default function ClienteTreinosPage() {
                           key={dateStr}
                           type="button"
                           onClick={() => setSelectedDay({ label: workoutLabel, dayName, isToday })}
-                          className={`rounded-md border p-2 min-h-[2.5rem] flex flex-col items-center justify-center transition-all hover:shadow-sm active:scale-95 ${
+                          className={`rounded-md border p-2 min-h-[2.75rem] sm:min-h-[2.5rem] flex flex-col items-center justify-center transition-all hover:shadow-sm active:scale-95 ${
                             isToday ? 'ring-2 ring-primary bg-primary/10 border-primary/30' : 'bg-muted/20 hover:bg-muted/50'
                           }`}
                         >

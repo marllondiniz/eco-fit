@@ -17,6 +17,7 @@ import {
   Settings,
   TrendingUp,
   UserCircle,
+  Activity,
 } from 'lucide-react'
 
 const HOME_BY_ROLE: Record<UserRole, string> = {
@@ -37,6 +38,7 @@ const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
     { label: 'Clientes', href: '/profissional/clientes', icon: Users },
     { label: 'Dietas', href: '/profissional/dietas', icon: Utensils },
     { label: 'Treinos', href: '/profissional/treinos', icon: Dumbbell },
+    { label: 'Cardio', href: '/profissional/cardio', icon: Activity },
     { label: 'Supervisão', href: '/profissional/supervisao', icon: ClipboardCheck },
     { label: 'Documentos', href: '/profissional/documentos', icon: FileText },
   ],
@@ -44,6 +46,7 @@ const NAV_BY_ROLE: Record<UserRole, NavItem[]> = {
     { label: 'Início', href: '/cliente', icon: LayoutDashboard },
     { label: 'Minhas Dietas', href: '/cliente/dietas', icon: Utensils },
     { label: 'Meus Treinos', href: '/cliente/treinos', icon: Dumbbell },
+    { label: 'Cardio', href: '/cliente/cardio', icon: Activity },
     { label: 'Progresso', href: '/cliente/progresso', icon: TrendingUp },
     { label: 'Perfil', href: '/cliente/perfil', icon: UserCircle },
   ],
@@ -73,7 +76,7 @@ export function Sidebar({ role, onClose }: SidebarProps) {
       if (item.href.startsWith('/profissional/dietas')) {
         return profType === 'nutritionist' || profType === 'both'
       }
-      if (item.href.startsWith('/profissional/treinos')) {
+      if (item.href.startsWith('/profissional/treinos') || item.href.startsWith('/profissional/cardio')) {
         return profType === 'personal' || profType === 'both'
       }
       return true

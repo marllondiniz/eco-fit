@@ -88,7 +88,7 @@ export default function GradeSemanalPage() {
         .select('id, name, label, status')
         .eq('client_id', cid)
         .eq('professional_id', user.id)
-        .in('label', ['A', 'B', 'C'])
+        .in('label', ['A', 'B', 'C', 'D', 'E', 'F'])
         .order('label'),
     ])
 
@@ -246,10 +246,10 @@ export default function GradeSemanalPage() {
       <div>
         <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
           <Calendar className="w-7 h-7 text-primary" />
-          Grade semanal A/B/C
+          Grade Semanal
         </h2>
         <p className="text-muted-foreground mt-1 text-sm">
-          Defina qual treino (A, B ou C) o cliente faz em cada dia. A estrutura se repete toda a semana.
+          Defina qual treino o cliente faz em cada dia. A estrutura se repete toda a semana.
         </p>
       </div>
 
@@ -330,9 +330,16 @@ export default function GradeSemanalPage() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="rest">Descanso</SelectItem>
-                        <SelectItem value="A">Treino A</SelectItem>
-                        <SelectItem value="B">Treino B</SelectItem>
-                        <SelectItem value="C">Treino C</SelectItem>
+                        {['A','B','C','D','E','F'].filter(l => workoutsByLabel[l]).map(l => (
+                          <SelectItem key={l} value={l}>Treino {l}</SelectItem>
+                        ))}
+                        {['A','B','C','D','E','F'].every(l => !workoutsByLabel[l]) && (
+                          <>
+                            <SelectItem value="A">Treino A</SelectItem>
+                            <SelectItem value="B">Treino B</SelectItem>
+                            <SelectItem value="C">Treino C</SelectItem>
+                          </>
+                        )}
                       </SelectContent>
                     </Select>
                     {scheduleMap[value] && workoutsByLabel[scheduleMap[value]] && (

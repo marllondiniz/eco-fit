@@ -1,14 +1,13 @@
 'use client'
 
 import { useState } from 'react'
-import { Dumbbell, Loader2, CheckCircle2 } from 'lucide-react'
+import { Activity, Loader2, CheckCircle2 } from 'lucide-react'
 
 interface Props {
-  label?: string
   onSuccess?: () => void
 }
 
-export function SolicitarTreinoButton({ label = 'Solicitar treino e cardio', onSuccess }: Props) {
+export function SolicitarCardioButton({ onSuccess }: Props) {
   const [state, setState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [msg, setMsg] = useState<string | null>(null)
 
@@ -18,14 +17,14 @@ export function SolicitarTreinoButton({ label = 'Solicitar treino e cardio', onS
     const res = await fetch('/api/cliente/solicitar-plano', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: 'workout' }),
+      body: JSON.stringify({ type: 'cardio' }),
     })
     const data = await res.json()
     if (!res.ok) {
-      setMsg(data.error ?? 'Erro ao solicitar treino.')
+      setMsg(data.error ?? 'Erro ao solicitar cardio.')
       setState('error')
     } else {
-      setMsg('Solicitação enviada! Aguarde seu personal criar o plano.')
+      setMsg('Solicitação enviada! Aguarde seu profissional criar o plano de cardio.')
       setState('done')
       onSuccess?.()
     }
@@ -50,7 +49,7 @@ export function SolicitarTreinoButton({ label = 'Solicitar treino e cardio', onS
         {state === 'loading' ? (
           <><Loader2 className="w-4 h-4 animate-spin" /> Enviando solicitação…</>
         ) : (
-          <><Dumbbell className="w-4 h-4" /> {label}</>
+          <><Activity className="w-4 h-4" /> Solicitar cardio</>
         )}
       </button>
       {state === 'error' && msg && (

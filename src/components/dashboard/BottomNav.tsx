@@ -9,12 +9,14 @@ import {
   Dumbbell,
   TrendingUp,
   UserCircle,
+  Activity,
 } from 'lucide-react'
 
 const CLIENT_NAV = [
   { label: 'Início',   href: '/cliente',          icon: LayoutDashboard, exact: true },
   { label: 'Dietas',   href: '/cliente/dietas',    icon: Utensils,        exact: false },
   { label: 'Treinos',  href: '/cliente/treinos',   icon: Dumbbell,        exact: false },
+  { label: 'Cardio',   href: '/cliente/cardio',    icon: Activity,        exact: false },
   { label: 'Progresso',href: '/cliente/progresso', icon: TrendingUp,      exact: false },
   { label: 'Perfil',   href: '/cliente/perfil',    icon: UserCircle,      exact: false },
 ]

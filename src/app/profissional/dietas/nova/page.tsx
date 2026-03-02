@@ -9,15 +9,25 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
-import { Plus, Trash2, ChevronLeft, GripVertical, Sparkles, Loader2 } from 'lucide-react'
+import { Plus, Trash2, ChevronLeft, GripVertical, Sparkles, Loader2, ChevronsUpDown, Utensils, Pill } from 'lucide-react'
 import Link from 'next/link'
 import { AnamnesePanel } from '@/components/AnamnesePanel'
+import { FoodCombobox } from '@/components/FoodCombobox'
+import { FoodSubstitutionCombobox } from '@/components/FoodSubstitutionCombobox'
+
+export interface FoodSubstitution {
+  name: string
+  quantity: string
+  unit: string
+}
 
 interface Alimento {
   name: string
   quantity: string
   unit: string
   calories: string
+  substitutions?: FoodSubstitution[]
+  showAlt?: boolean
 }
 
 interface Refeicao {
@@ -27,13 +37,20 @@ interface Refeicao {
   notes: string
 }
 
+interface Suplemento {
+  name: string
+  dose: string
+  schedule: string
+  notes: string
+}
+
 interface Cliente {
   id: string
   full_name: string | null
   email: string | null
 }
 
-const emptyFood = (): Alimento => ({ name: '', quantity: '', unit: 'g', calories: '' })
+const emptyFood = (): Alimento => ({ name: '', quantity: '', unit: 'g', calories: '', substitutions: [], showAlt: false })
 const emptyMeal = (): Refeicao => ({ name: '', time_of_day: '', foods: [emptyFood()], notes: '' })
 
 const OBJETIVOS = [
@@ -64,6 +81,7 @@ function NovaDietaForm() {
   const [metodologia, setMetodologia] = useState('')
   const [observacoes, setObservacoes] = useState('')
   const [refeicoes, setRefeicoes] = useState<Refeicao[]>([emptyMeal()])
+  const [suplementos, setSuplementos] = useState<Suplemento[]>([])
 
   useEffect(() => {
     async function fetchClientes() {
@@ -82,15 +100,53 @@ function NovaDietaForm() {
     setGerandoIA(true)
     setErro(null)
     const clienteSelecionado = clientes.find(c => c.id === clienteId)
+
+    let profileData: Record<string, any> = {}
+    let anamneseData: Record<string, any> = {}
+
+    if (clienteId) {
+      const [{ data: prof }, { data: anam }] = await Promise.all([
+        supabase.from('client_profiles').select('*').eq('user_id', clienteId).maybeSingle(),
+        supabase.from('client_anamnese').select('*').eq('user_id', clienteId).maybeSingle(),
+      ])
+      profileData = prof ?? {}
+      anamneseData = anam ?? {}
+    }
+
+    const GOAL_PT: Record<string, string> = {
+      weight_loss: 'Emagrecimento', muscle_gain: 'Ganho de massa muscular',
+      maintenance: 'Manutenção', health: 'Saúde geral',
+      performance: 'Performance esportiva', rehabilitation: 'Reeducação alimentar',
+    }
+    const ACTIVITY_PT: Record<string, string> = {
+      sedentary: 'Sedentário', light: 'Leve', moderate: 'Moderado',
+      intense: 'Intenso', athlete: 'Atleta',
+    }
+    const SEX_PT: Record<string, string> = {
+      male: 'Masculino', female: 'Feminino', other: 'Outro',
+    }
+
+    const restricoes = [anamneseData.injuries, anamneseData.diseases].filter(Boolean).join('; ') || ''
+    const numRef = parseInt(anamneseData.meals_per_day) || 5
+
     try {
       const res = await fetch('/api/ai/dieta', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          objetivo,
-          clienteNome: clienteSelecionado?.full_name ?? '',
+          objetivo:       objetivo || GOAL_PT[profileData.goal ?? ''] || '',
+          clienteNome:    clienteSelecionado?.full_name ?? '',
           observacoes,
-          numRefeicoes: 5,
+          numRefeicoes:   numRef,
+          peso:           profileData.weight_kg ? String(profileData.weight_kg) : '',
+          altura:         profileData.height_cm ? String(profileData.height_cm) : '',
+          idade:          profileData.age ? String(profileData.age) : '',
+          sexo:           SEX_PT[profileData.sex ?? ''] ?? '',
+          nivelAtividade: ACTIVITY_PT[profileData.activity_level ?? ''] ?? '',
+          alergias:       anamneseData.food_allergies ?? '',
+          preferencias:   anamneseData.food_preferences ?? '',
+          restricoes,
+          medicamentos:   anamneseData.medications ?? '',
         }),
       })
       const data = await res.json()
@@ -113,6 +169,8 @@ function NovaDietaForm() {
               quantity: String(f.quantity ?? ''),
               unit: f.unit ?? 'g',
               calories: f.calories != null ? String(f.calories) : '',
+              substitutions: f.substitutions ?? [],
+              showAlt: (f.substitutions?.length ?? 0) > 0,
             })),
           }))
         )
@@ -146,6 +204,82 @@ function NovaDietaForm() {
         : r
     ))
   }
+  function addSubstitution(mealIdx: number, foodIdx: number, sub: FoodSubstitution) {
+    setRefeicoes(prev => prev.map((r, i) =>
+      i === mealIdx
+        ? {
+            ...r,
+            foods: r.foods.map((f, fi) =>
+              fi === foodIdx
+                ? { ...f, substitutions: [...(f.substitutions ?? []), sub] }
+                : f
+            ),
+          }
+        : r
+    ))
+  }
+  function removeSubstitution(mealIdx: number, foodIdx: number, subIdx: number) {
+    setRefeicoes(prev => prev.map((r, i) =>
+      i === mealIdx
+        ? {
+            ...r,
+            foods: r.foods.map((f, fi) =>
+              fi === foodIdx
+                ? { ...f, substitutions: (f.substitutions ?? []).filter((_, si) => si !== subIdx) }
+                : f
+            ),
+          }
+        : r
+    ))
+  }
+  function replaceWithSubstitution(mealIdx: number, foodIdx: number, sub: FoodSubstitution) {
+    setRefeicoes(prev => prev.map((r, i) =>
+      i === mealIdx
+        ? {
+            ...r,
+            foods: r.foods.map((f, fi) =>
+              fi === foodIdx
+                ? {
+                    name: sub.name,
+                    quantity: sub.quantity,
+                    unit: sub.unit,
+                    calories: f.calories, // mantém kcal equivalentes
+                    substitutions: (f.substitutions ?? []).filter(s => s.name !== sub.name),
+                  }
+                : f
+            ),
+          }
+        : r
+    ))
+  }
+  function toggleSubstitution(mealIdx: number, foodIdx: number) {
+    setRefeicoes(prev => prev.map((r, i) =>
+      i === mealIdx
+        ? {
+            ...r,
+            foods: r.foods.map((f, fi) =>
+              fi === foodIdx
+                ? {
+                    ...f,
+                    showAlt: !(f.showAlt ?? false),
+                    substitutions: f.showAlt ? [] : (f.substitutions ?? []),
+                  }
+                : f
+            ),
+          }
+        : r
+    ))
+  }
+
+  function addSuplemento() {
+    setSuplementos(prev => [...prev, { name: '', dose: '', schedule: '', notes: '' }])
+  }
+  function removeSuplemento(idx: number) {
+    setSuplementos(prev => prev.filter((_, i) => i !== idx))
+  }
+  function updateSuplemento(idx: number, field: keyof Suplemento, value: string) {
+    setSuplementos(prev => prev.map((s, i) => i === idx ? { ...s, [field]: value } : s))
+  }
 
   function calcEndDate(start: string, weeks: number) {
     const d = new Date(start + 'T12:00:00')
@@ -176,6 +310,12 @@ function NovaDietaForm() {
         objective:       objetivo || null,
         methodology:     metodologia.trim() || null,
         notes:           observacoes.trim() || null,
+        supplements:     suplementos.filter(s => s.name.trim()).map(s => ({
+          name:     s.name.trim(),
+          dose:     s.dose.trim(),
+          schedule: s.schedule.trim(),
+          notes:    s.notes.trim(),
+        })),
         status:          isSent ? 'sent' : status,
         sent_at:         isSent ? new Date().toISOString() : null,
         start_date:      isSent ? startDate : null,
@@ -196,10 +336,11 @@ function NovaDietaForm() {
       name:        r.name,
       time_of_day: r.time_of_day || null,
       foods:       r.foods.filter(f => f.name.trim()).map(f => ({
-        name:     f.name,
-        quantity: f.quantity,
-        unit:     f.unit,
-        calories: f.calories ? Number(f.calories) : undefined,
+        name:          f.name,
+        quantity:      f.quantity,
+        unit:          f.unit,
+        calories:      f.calories ? Number(f.calories) : undefined,
+        substitutions: (f.substitutions ?? []).filter(s => s.name?.trim()),
       })),
       notes:       r.notes || null,
       order_index: idx,
@@ -412,58 +553,133 @@ function NovaDietaForm() {
                 )}
               </div>
 
-              <div className="ml-7 space-y-2">
-                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Alimentos</p>
+              <div className="ml-7 space-y-2.5">
+                <div className="flex items-center justify-between pb-1 border-b border-border">
+                  <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                    <Utensils className="w-3.5 h-3.5" /> Alimentos
+                  </span>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => addFood(mealIdx)}
+                    className="h-7 text-xs gap-1.5"
+                  >
+                    <Plus className="w-3 h-3" /> Adicionar
+                  </Button>
+                </div>
                 {refeicao.foods.map((food, foodIdx) => (
-                  <div key={foodIdx} className="flex flex-col sm:flex-row gap-2 items-start">
-                    <Input
-                      value={food.name}
-                      onChange={e => updateFood(mealIdx, foodIdx, 'name', e.target.value)}
-                      placeholder="Alimento"
-                      className="w-full sm:flex-1 text-sm"
-                    />
-                    <div className="flex gap-2 items-start w-full sm:w-auto">
-                      <Input
-                        value={food.quantity}
-                        onChange={e => updateFood(mealIdx, foodIdx, 'quantity', e.target.value)}
-                        placeholder="Qtd"
-                        className="w-16 text-sm"
+                  <div key={foodIdx} className="space-y-1.5">
+                    <div className="flex flex-col sm:flex-row gap-2 items-start">
+                      <FoodCombobox
+                        value={food.name}
+                        onChange={v => updateFood(mealIdx, foodIdx, 'name', v)}
+                        onSelectFood={f => updateFood(mealIdx, foodIdx, 'calories', String(Math.round(f.energy_kcal)))}
+                        placeholder="Alimento (Base TACO)"
+                        className="w-full sm:flex-1"
                       />
-                      <Select value={food.unit} onValueChange={v => updateFood(mealIdx, foodIdx, 'unit', v)}>
-                        <SelectTrigger className="w-16 text-sm">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {['g', 'ml', 'un', 'col', 'xíc', 'fatia'].map(u => (
-                            <SelectItem key={u} value={u}>{u}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <Input
-                        value={food.calories}
-                        onChange={e => updateFood(mealIdx, foodIdx, 'calories', e.target.value)}
-                        placeholder="kcal"
-                        type="number"
-                        className="w-16 text-sm flex-1 sm:flex-none"
-                      />
-                      {refeicao.foods.length > 1 && (
-                        <button
-                          onClick={() => removeFood(mealIdx, foodIdx)}
-                          className="p-2 text-muted-foreground/40 hover:text-red-500 transition-colors flex-shrink-0"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      )}
+                      <div className="flex gap-2 items-start w-full sm:w-auto">
+                        <Input
+                          value={food.quantity}
+                          onChange={e => updateFood(mealIdx, foodIdx, 'quantity', e.target.value)}
+                          placeholder="Qtd"
+                          className="w-16 text-sm"
+                        />
+                        <Select value={food.unit} onValueChange={v => updateFood(mealIdx, foodIdx, 'unit', v)}>
+                          <SelectTrigger className="w-16 text-sm">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {['g', 'ml', 'un', 'col', 'xíc', 'fatia'].map(u => (
+                              <SelectItem key={u} value={u}>{u}</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          value={food.calories}
+                          onChange={e => updateFood(mealIdx, foodIdx, 'calories', e.target.value)}
+                          placeholder="kcal"
+                          type="number"
+                          className="w-16 text-sm flex-1 sm:flex-none"
+                        />
+                        {refeicao.foods.length > 1 && (
+                          <button
+                            onClick={() => removeFood(mealIdx, foodIdx)}
+                            className="p-2 text-muted-foreground/40 hover:text-red-500 transition-colors flex-shrink-0"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
+                    {/* Alternativa (igual ao treino) */}
+                    {food.showAlt ? (
+                      <div className="ml-2 pl-3 border-l-2 border-dashed border-violet-300 dark:border-violet-700 space-y-1.5">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-medium text-violet-600 dark:text-violet-400">Opção 2 (alternativa)</span>
+                          <button
+                            type="button"
+                            onClick={() => toggleSubstitution(mealIdx, foodIdx)}
+                            className="text-xs text-muted-foreground hover:text-red-500 ml-auto"
+                          >
+                            remover
+                          </button>
+                        </div>
+                        {(food.substitutions ?? []).length > 0 && (
+                          <div className="space-y-1.5">
+                            {(food.substitutions ?? []).map((sub, subIdx) => (
+                              <div
+                                key={subIdx}
+                                className="flex items-center justify-between gap-2 py-1 px-2 rounded-lg bg-violet-50/80 dark:bg-violet-950/30 text-sm"
+                              >
+                                <span className="text-foreground">
+                                  {sub.name} — {sub.quantity} {sub.unit}
+                                </span>
+                                <div className="flex items-center gap-1">
+                                  <Button
+                                    type="button"
+                                    variant="ghost"
+                                    size="sm"
+                                    className="h-7 text-xs text-violet-600 hover:text-violet-700"
+                                    onClick={() => replaceWithSubstitution(mealIdx, foodIdx, sub)}
+                                  >
+                                    Usar
+                                  </Button>
+                                  <button
+                                    type="button"
+                                    onClick={() => removeSubstitution(mealIdx, foodIdx, subIdx)}
+                                    className="p-1 text-muted-foreground hover:text-red-500"
+                                    aria-label="Remover substituição"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                        {food.name.trim() && food.calories && parseFloat(food.calories) > 0 && (
+                          <FoodSubstitutionCombobox
+                            originalCalories={parseFloat(food.calories)}
+                            originalUnit={food.unit}
+                            onSelect={sub => addSubstitution(mealIdx, foodIdx, sub)}
+                            placeholder="Alimento alternativo (Base TACO)…"
+                            className="w-full"
+                          />
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => toggleSubstitution(mealIdx, foodIdx)}
+                        className="text-xs text-violet-600 dark:text-violet-400 hover:opacity-80 flex items-center gap-1 ml-1"
+                      >
+                        <ChevronsUpDown className="w-3 h-3" />
+                        Adicionar alternativa
+                      </button>
+                    )}
                   </div>
                 ))}
-                <button
-                  onClick={() => addFood(mealIdx)}
-                  className="text-xs text-primary hover:opacity-90 font-medium flex items-center gap-1 mt-1"
-                >
-                  <Plus className="w-3 h-3" />
-                  Adicionar alimento
-                </button>
               </div>
 
               <div className="ml-7 space-y-1.5">
@@ -479,6 +695,93 @@ function NovaDietaForm() {
           </Card>
         ))}
       </div>
+
+      {/* Prescrição de Suplementação */}
+      <Card>
+        <CardContent className="p-5">
+          <div className="space-y-2.5">
+            <div className="flex items-center justify-between pb-1 border-b border-border">
+              <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wider flex items-center gap-1.5">
+                <Pill className="w-3.5 h-3.5" /> Prescrição de Suplementação
+              </span>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addSuplemento}
+                className="h-7 text-xs gap-1.5"
+              >
+                <Plus className="w-3 h-3" /> Adicionar
+              </Button>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Suplementos prescritos separados da alimentação principal.
+            </p>
+            {suplementos.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-4 text-center">
+                Nenhum suplemento adicionado. Clique em Adicionar para prescrever.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {suplementos.map((sup, idx) => (
+                  <div
+                    key={idx}
+                    className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4 p-4 rounded-xl border border-border bg-muted/30"
+                  >
+                    <div className="sm:col-span-2 lg:col-span-1 space-y-1.5">
+                      <Label className="text-xs">Nome do suplemento</Label>
+                      <Input
+                        value={sup.name}
+                        onChange={e => updateSuplemento(idx, 'name', e.target.value)}
+                        placeholder="Ex: Whey Protein"
+                        className="text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Dose</Label>
+                      <Input
+                        value={sup.dose}
+                        onChange={e => updateSuplemento(idx, 'dose', e.target.value)}
+                        placeholder="Ex: 30g"
+                        className="text-sm"
+                      />
+                    </div>
+                    <div className="space-y-1.5">
+                      <Label className="text-xs">Horário</Label>
+                      <Input
+                        value={sup.schedule}
+                        onChange={e => updateSuplemento(idx, 'schedule', e.target.value)}
+                        placeholder="Ex: Após treino"
+                        className="text-sm"
+                      />
+                    </div>
+                    <div className="sm:col-span-2 lg:col-span-4 space-y-1.5">
+                      <Label className="text-xs">Observações</Label>
+                      <Input
+                        value={sup.notes}
+                        onChange={e => updateSuplemento(idx, 'notes', e.target.value)}
+                        placeholder="Ex: Tomar com água, evitar com café"
+                        className="text-sm"
+                      />
+                    </div>
+                    <div className="sm:col-span-2 lg:col-span-4 flex justify-end">
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => removeSuplemento(idx)}
+                        className="h-7 text-xs text-red-600 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-950/40"
+                      >
+                        <Trash2 className="w-3 h-3 mr-1" /> Remover
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {erro && (
         <p className="text-sm text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/50 border border-red-100 dark:border-red-800 rounded-xl px-4 py-2.5">

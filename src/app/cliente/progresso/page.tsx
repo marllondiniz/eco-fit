@@ -5,10 +5,11 @@ import { supabase } from '@/lib/supabase'
 import { getLocalDateString, getLocalWeekStart } from '@/lib/date-utils'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import Link from 'next/link'
 import {
   Flame, Trophy, Star, Target, TrendingUp, Calendar,
   Dumbbell, Zap, Award, BarChart2, Swords, ShieldCheck,
-  Layers, Crown, Medal, BadgeCheck
+  Layers, Crown, Medal, BadgeCheck, Utensils
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 
@@ -52,8 +53,10 @@ function getMonthDays(year: number, month: number): string[] {
 
 export default function ProgressoPage() {
   const [sessions, setSessions] = useState<any[]>([])
+  const [dietSessions, setDietSessions] = useState<any[]>([])
   const [gamification, setGamification] = useState<any>(null)
   const [workouts, setWorkouts] = useState<any[]>([])
+  const [diets, setDiets] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [selectedMonth, setSelectedMonth] = useState(() => {
     const now = new Date()
@@ -65,9 +68,20 @@ export default function ProgressoPage() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      const [{ data: sessionsData }, { data: gamiData }, { data: workoutsData }] = await Promise.all([
+      const [
+        { data: sessionsData },
+        { data: dietSessionsData },
+        { data: gamiData },
+        { data: workoutsData },
+        { data: dietsData },
+      ] = await Promise.all([
         supabase
           .from('workout_sessions')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('date', { ascending: false }),
+        supabase
+          .from('diet_sessions')
           .select('*')
           .eq('user_id', user.id)
           .order('date', { ascending: false }),
@@ -81,11 +95,18 @@ export default function ProgressoPage() {
           .select('id, name')
           .eq('client_id', user.id)
           .eq('status', 'sent'),
+        supabase
+          .from('diets')
+          .select('id, name')
+          .eq('client_id', user.id)
+          .eq('status', 'sent'),
       ])
 
       setSessions(sessionsData ?? [])
+      setDietSessions(dietSessionsData ?? [])
       setGamification(gamiData ?? null)
       setWorkouts(workoutsData ?? [])
+      setDiets(dietsData ?? [])
       setLoading(false)
     }
     load()
@@ -100,12 +121,16 @@ export default function ProgressoPage() {
   }
 
   // ---- Computações ----
-  const levelInfo = gamification ? getLevelInfo(gamification.total_xp) : null
+  const g = gamification ?? {
+    total_xp: 0, streak_days: 0, total_sessions: 0, weekly_target_sessions: 0,
+    longest_streak: 0, total_diet_sessions: 0, diet_streak_days: 0, longest_diet_streak: 0,
+  }
+  const levelInfo = g.total_xp > 0 ? getLevelInfo(g.total_xp) : { level: 1, xpInLevel: 0, pct: 0 }
   const levelCfg = levelInfo ? getLevelConfig(levelInfo.level) : null
   const weekStart = getLocalWeekStart()
   const today = getLocalDateString()
   const sessionsThisWeek = sessions.filter(s => s.date >= weekStart && s.date <= today && s.is_complete).length
-  const weeklyTarget = gamification?.weekly_target_sessions ?? 0
+  const weeklyTarget = g.weekly_target_sessions ?? 0
   const weeklyPct = weeklyTarget > 0 ? Math.min(100, Math.round((sessionsThisWeek / weeklyTarget) * 100)) : 0
 
   // Mapa de datas com sessões
@@ -114,6 +139,15 @@ export default function ProgressoPage() {
     if (!sessionByDate.has(s.date)) sessionByDate.set(s.date, [])
     sessionByDate.get(s.date)!.push(s)
   }
+
+  // Mapa de datas com diet_sessions
+  const dietSessionByDate = new Map<string, any[]>()
+  for (const s of dietSessions) {
+    if (!dietSessionByDate.has(s.date)) dietSessionByDate.set(s.date, [])
+    dietSessionByDate.get(s.date)!.push(s)
+  }
+
+  const hasAnyData = !!gamification || dietSessions.length > 0
 
   // Últimos 7 dias para o gráfico de frequência
   const last7 = getLastNDays(7)
@@ -156,15 +190,20 @@ export default function ProgressoPage() {
     : { year: selectedMonth.year, month: selectedMonth.month + 1 }
   const canGoNext = new Date(nextMonth.year, nextMonth.month) <= new Date(now.getFullYear(), now.getMonth())
 
-  // Badges/conquistas
+  // Badges/conquistas (treino)
   const badges: { Icon: LucideIcon; color: string; bg: string; label: string; desc: string }[] = []
-  if (gamification?.total_sessions >= 1) badges.push({ Icon: Target, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-100 dark:bg-emerald-900/60', label: 'Primeiro Treino', desc: 'Completou seu primeiro treino' })
-  if (gamification?.total_sessions >= 7) badges.push({ Icon: Flame, color: 'text-orange-500', bg: 'bg-orange-100 dark:bg-orange-900/60', label: 'Uma Semana', desc: '7 treinos completos' })
-  if (gamification?.total_sessions >= 30) badges.push({ Icon: Swords, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-100 dark:bg-blue-900/60', label: 'Um Mês', desc: '30 treinos completos' })
-  if (gamification?.streak_days >= 3) badges.push({ Icon: Zap, color: 'text-amber-500', bg: 'bg-amber-100 dark:bg-amber-900/60', label: 'Triplicado', desc: '3 dias seguidos' })
-  if (gamification?.streak_days >= 7) badges.push({ Icon: ShieldCheck, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-100 dark:bg-purple-900/60', label: 'Semana Perfeita', desc: '7 dias seguidos' })
-  if (gamification?.total_xp >= 1000) badges.push({ Icon: Trophy, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-100 dark:bg-amber-900/60', label: 'Mil XP', desc: '1000 XP conquistados' })
+  if (g.total_sessions >= 1) badges.push({ Icon: Target, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-100 dark:bg-emerald-900/60', label: 'Primeiro Treino', desc: 'Completou seu primeiro treino' })
+  if (g.total_sessions >= 7) badges.push({ Icon: Flame, color: 'text-orange-500', bg: 'bg-orange-100 dark:bg-orange-900/60', label: 'Uma Semana', desc: '7 treinos completos' })
+  if (g.total_sessions >= 30) badges.push({ Icon: Swords, color: 'text-blue-600 dark:text-blue-400', bg: 'bg-blue-100 dark:bg-blue-900/60', label: 'Um Mês', desc: '30 treinos completos' })
+  if (g.streak_days >= 3) badges.push({ Icon: Zap, color: 'text-amber-500', bg: 'bg-amber-100 dark:bg-amber-900/60', label: 'Triplicado', desc: '3 dias seguidos treino' })
+  if (g.streak_days >= 7) badges.push({ Icon: ShieldCheck, color: 'text-purple-600 dark:text-purple-400', bg: 'bg-purple-100 dark:bg-purple-900/60', label: 'Semana Perfeita', desc: '7 dias seguidos treino' })
+  if (g.total_xp >= 1000) badges.push({ Icon: Trophy, color: 'text-amber-600 dark:text-amber-400', bg: 'bg-amber-100 dark:bg-amber-900/60', label: 'Mil XP', desc: '1000 XP conquistados' })
   if (levelInfo && levelInfo.level >= 5) badges.push({ Icon: Crown, color: 'text-yellow-600 dark:text-yellow-400', bg: 'bg-yellow-100 dark:bg-yellow-900/60', label: 'Nível 5', desc: 'Alcançou o nível 5' })
+  // Badges dieta
+  if ((g.total_diet_sessions ?? 0) >= 1) badges.push({ Icon: Utensils, color: 'text-emerald-600 dark:text-emerald-400', bg: 'bg-emerald-100 dark:bg-emerald-900/60', label: 'Primeiro Dia Dieta', desc: 'Cumpriu dieta 1 dia completo' })
+  if ((g.total_diet_sessions ?? 0) >= 7) badges.push({ Icon: Utensils, color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-100 dark:bg-teal-900/60', label: '7 Dias Dieta', desc: '7 dias cumprindo dieta' })
+  if ((g.diet_streak_days ?? 0) >= 3) badges.push({ Icon: Flame, color: 'text-teal-500', bg: 'bg-teal-100 dark:bg-teal-900/60', label: 'Sequência Dieta', desc: '3 dias seguidos cumprindo dieta' })
+  if ((g.diet_streak_days ?? 0) >= 7) badges.push({ Icon: ShieldCheck, color: 'text-teal-600 dark:text-teal-400', bg: 'bg-teal-100 dark:bg-teal-900/60', label: 'Semana Dieta', desc: '7 dias seguidos cumprindo dieta' })
 
   return (
     <div className="space-y-8">
@@ -176,12 +215,12 @@ export default function ProgressoPage() {
         </p>
       </div>
 
-      {!gamification ? (
+      {!hasAnyData ? (
         <Card>
           <CardContent className="py-16 text-center">
             <BarChart2 className="w-10 h-10 text-muted-foreground/50 mx-auto mb-3" />
             <p className="text-muted-foreground font-medium">Nenhum dado ainda.</p>
-            <p className="text-xs text-muted-foreground mt-1">Complete seus primeiros treinos para ver seu progresso aqui.</p>
+            <p className="text-xs text-muted-foreground mt-1">Complete seus primeiros treinos e dietas para ver seu progresso aqui.</p>
           </CardContent>
         </Card>
       ) : (
@@ -201,7 +240,7 @@ export default function ProgressoPage() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <p className="text-xl font-bold text-foreground">{gamification.total_xp}</p>
+                    <p className="text-xl font-bold text-foreground">{g.total_xp}</p>
                     <p className="text-xs text-muted-foreground">XP total</p>
                   </div>
                 </div>
@@ -224,10 +263,10 @@ export default function ProgressoPage() {
                   <Flame className="w-4 h-4 text-orange-500" />
                   <span className="text-xs text-muted-foreground">Sequência atual</span>
                 </div>
-                <p className="text-3xl font-bold text-foreground">{gamification.streak_days}</p>
-                <p className="text-xs text-muted-foreground">{gamification.streak_days === 1 ? 'dia' : 'dias'} consecutivos</p>
+                <p className="text-3xl font-bold text-foreground">{g.streak_days}</p>
+                <p className="text-xs text-muted-foreground">{g.streak_days === 1 ? 'dia' : 'dias'} consecutivos</p>
                 <div className="mt-2 pt-2 border-t border-border">
-                  <p className="text-xs text-muted-foreground">Recorde: <span className="font-semibold text-foreground">{gamification.longest_streak}d</span></p>
+                  <p className="text-xs text-muted-foreground">Recorde: <span className="font-semibold text-foreground">{g.longest_streak}d</span></p>
                 </div>
               </CardContent>
             </Card>
@@ -238,10 +277,38 @@ export default function ProgressoPage() {
                   <Trophy className="w-4 h-4 text-amber-500" />
                   <span className="text-xs text-muted-foreground">Sessões totais</span>
                 </div>
-                <p className="text-3xl font-bold text-foreground">{gamification.total_sessions}</p>
-                <p className="text-xs text-muted-foreground">{gamification.total_sessions === 1 ? 'treino completo' : 'treinos completos'}</p>
+                <p className="text-3xl font-bold text-foreground">{g.total_sessions}</p>
+                <p className="text-xs text-muted-foreground">{g.total_sessions === 1 ? 'treino completo' : 'treinos completos'}</p>
               </CardContent>
             </Card>
+
+            {(g.total_diet_sessions ?? 0) > 0 && (
+              <>
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Utensils className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                      <span className="text-xs text-muted-foreground">Sequência dieta</span>
+                    </div>
+                    <p className="text-3xl font-bold text-foreground">{g.diet_streak_days ?? 0}</p>
+                    <p className="text-xs text-muted-foreground">{(g.diet_streak_days ?? 0) === 1 ? 'dia' : 'dias'} consecutivos</p>
+                    <div className="mt-2 pt-2 border-t border-border">
+                      <p className="text-xs text-muted-foreground">Recorde: <span className="font-semibold text-foreground">{(g.longest_diet_streak ?? 0)}d</span></p>
+                    </div>
+                  </CardContent>
+                </Card>
+                <Card>
+                  <CardContent className="p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Target className="w-4 h-4 text-emerald-500" />
+                      <span className="text-xs text-muted-foreground">Dias dieta</span>
+                    </div>
+                    <p className="text-3xl font-bold text-foreground">{g.total_diet_sessions ?? 0}</p>
+                    <p className="text-xs text-muted-foreground">{(g.total_diet_sessions ?? 0) === 1 ? 'dia cumprido' : 'dias cumpridos'}</p>
+                  </CardContent>
+                </Card>
+              </>
+            )}
 
             {weeklyTarget > 0 && (
               <Card>
@@ -257,12 +324,12 @@ export default function ProgressoPage() {
             )}
           </div>
 
-          {/* Frequência últimos 7 dias */}
+          {/* Frequência últimos 7 dias — Treino */}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
                 <TrendingUp className="w-4 h-4 text-primary" />
-                Frequência — Últimos 7 dias
+                Frequência Treino — Últimos 7 dias
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -297,6 +364,49 @@ export default function ProgressoPage() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Frequência últimos 7 dias — Dieta */}
+          {dietSessions.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-base flex items-center gap-2">
+                  <Utensils className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                  Frequência Dieta — Últimos 7 dias
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex items-end gap-2 h-20">
+                  {last7.map((date) => {
+                    const dayDietSessions = dietSessionByDate.get(date) ?? []
+                    const isComplete = dayDietSessions.some((s: any) => s.is_complete)
+                    const hasActivity = dayDietSessions.length > 0
+                    const d = new Date(date + 'T12:00:00')
+                    const isToday = date === getLocalDateString()
+                    return (
+                      <div key={date} className="flex-1 flex flex-col items-center gap-1">
+                        <div className="w-full flex items-end justify-center" style={{ height: 56 }}>
+                          <div
+                            className={`w-full rounded-t-md transition-all duration-300 ${
+                              isComplete ? 'bg-teal-500' : hasActivity ? 'bg-teal-400' : 'bg-muted'
+                            }`}
+                            style={{ height: isComplete ? '100%' : hasActivity ? '60%' : '8%' }}
+                          />
+                        </div>
+                        <span className={`text-xs font-medium ${isToday ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}>
+                          {DAYS_PT[d.getDay()]}
+                        </span>
+                      </div>
+                    )
+                  })}
+                </div>
+                <div className="flex items-center gap-4 mt-3 text-xs text-muted-foreground">
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-teal-500 inline-block" /> Dieta completa</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-teal-400 inline-block" /> Dieta em progresso</span>
+                  <span className="flex items-center gap-1.5"><span className="w-2.5 h-2.5 rounded-sm bg-muted inline-block" /> Sem dieta</span>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           {/* Calendário mensal */}
           <Card>
@@ -441,28 +551,54 @@ export default function ProgressoPage() {
                 <div className="mt-3 pt-3 border-t border-border">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Próximas conquistas</p>
                   <div className="space-y-2">
-                    {gamification.total_sessions < 7 && (
+                    {g.total_sessions < 7 && (
                       <div className="flex items-center gap-3 opacity-50">
                         <div className="w-8 h-8 rounded-lg bg-orange-100 dark:bg-orange-900/40 flex items-center justify-center flex-shrink-0">
                           <Flame className="w-4 h-4 text-orange-500" />
                         </div>
                         <div className="flex-1">
-                          <p className="text-xs font-medium text-foreground">Uma Semana — {7 - gamification.total_sessions} treinos restantes</p>
+                          <p className="text-xs font-medium text-foreground">Uma Semana — {7 - g.total_sessions} treinos restantes</p>
                           <div className="w-full bg-border rounded-full h-1.5 mt-1">
-                            <div className="h-1.5 rounded-full bg-primary/40" style={{ width: `${(gamification.total_sessions / 7) * 100}%` }} />
+                            <div className="h-1.5 rounded-full bg-primary/40" style={{ width: `${(g.total_sessions / 7) * 100}%` }} />
                           </div>
                         </div>
                       </div>
                     )}
-                    {gamification.streak_days < 7 && (
+                    {g.streak_days < 7 && (
                       <div className="flex items-center gap-3 opacity-50">
                         <div className="w-8 h-8 rounded-lg bg-purple-100 dark:bg-purple-900/40 flex items-center justify-center flex-shrink-0">
                           <ShieldCheck className="w-4 h-4 text-purple-600 dark:text-purple-400" />
                         </div>
                         <div className="flex-1">
-                          <p className="text-xs font-medium text-foreground">Semana Perfeita — {7 - gamification.streak_days} dias seguidos restantes</p>
+                          <p className="text-xs font-medium text-foreground">Semana Perfeita — {7 - g.streak_days} dias seguidos restantes</p>
                           <div className="w-full bg-border rounded-full h-1.5 mt-1">
-                            <div className="h-1.5 rounded-full bg-primary/40" style={{ width: `${(gamification.streak_days / 7) * 100}%` }} />
+                            <div className="h-1.5 rounded-full bg-primary/40" style={{ width: `${(g.streak_days / 7) * 100}%` }} />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {(g.total_diet_sessions ?? 0) < 7 && dietSessions.length > 0 && (
+                      <div className="flex items-center gap-3 opacity-50">
+                        <div className="w-8 h-8 rounded-lg bg-teal-100 dark:bg-teal-900/40 flex items-center justify-center flex-shrink-0">
+                          <Utensils className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-xs font-medium text-foreground">7 Dias Dieta — {7 - (g.total_diet_sessions ?? 0)} dias restantes</p>
+                          <div className="w-full bg-border rounded-full h-1.5 mt-1">
+                            <div className="h-1.5 rounded-full bg-teal-400/60" style={{ width: `${Math.min(100, ((g.total_diet_sessions ?? 0) / 7) * 100)}%` }} />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    {(g.diet_streak_days ?? 0) < 7 && dietSessions.length > 0 && (
+                      <div className="flex items-center gap-3 opacity-50">
+                        <div className="w-8 h-8 rounded-lg bg-teal-100 dark:bg-teal-900/40 flex items-center justify-center flex-shrink-0">
+                          <Flame className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                        </div>
+                        <div className="flex-1">
+                          <p className="text-xs font-medium text-foreground">Semana Dieta — {7 - (g.diet_streak_days ?? 0)} dias seguidos restantes</p>
+                          <div className="w-full bg-border rounded-full h-1.5 mt-1">
+                            <div className="h-1.5 rounded-full bg-teal-400/60" style={{ width: `${Math.min(100, ((g.diet_streak_days ?? 0) / 7) * 100)}%` }} />
                           </div>
                         </div>
                       </div>
@@ -473,17 +609,17 @@ export default function ProgressoPage() {
             </Card>
           )}
 
-          {/* Histórico */}
+          {/* Histórico Treino */}
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base flex items-center gap-2">
                 <Dumbbell className="w-4 h-4 text-primary" />
-                Histórico Recente
+                Histórico Treino
               </CardTitle>
             </CardHeader>
             <CardContent>
               {recentHistory.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-6">Nenhuma sessão registrada ainda.</p>
+                <p className="text-sm text-muted-foreground text-center py-6">Nenhuma sessão de treino registrada ainda.</p>
               ) : (
                 <div className="space-y-2">
                   {recentHistory.map(session => {
@@ -533,6 +669,70 @@ export default function ProgressoPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Histórico Dieta */}
+          {dietSessions.length > 0 && (
+            <Card>
+              <CardHeader className="pb-2">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base flex items-center gap-2">
+                    <Utensils className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
+                    Histórico Dieta
+                  </CardTitle>
+                  <Link href="/cliente/dietas" className="text-xs text-primary font-medium hover:opacity-90">
+                    Ver dieta
+                  </Link>
+                </div>
+              </CardHeader>
+              <CardContent>
+                <div className="space-y-2">
+                  {dietSessions.slice(0, 10).map((session: any) => {
+                    const dieta = diets.find((d: any) => d.id === session.diet_id)
+                    const d = new Date(session.date + 'T12:00:00')
+                    const pct = session.total_meals > 0
+                      ? Math.round((session.completed_count / session.total_meals) * 100)
+                      : 0
+                    return (
+                      <div key={session.id} className="flex items-center gap-3 p-3 rounded-xl border border-border">
+                        <div className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 ${
+                          session.is_complete
+                            ? 'bg-teal-100 dark:bg-teal-900/60'
+                            : 'bg-muted'
+                        }`}>
+                          {session.is_complete
+                            ? <Trophy className="w-4 h-4 text-teal-600 dark:text-teal-400" />
+                            : <Target className="w-4 h-4 text-muted-foreground" />
+                          }
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-foreground truncate">
+                            {dieta?.name ?? 'Dieta'}
+                          </p>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className="text-xs text-muted-foreground">
+                              {d.toLocaleDateString('pt-BR', { weekday: 'short', day: 'numeric', month: 'short' })}
+                            </span>
+                            <span className="text-xs text-muted-foreground">·</span>
+                            <span className="text-xs text-muted-foreground">
+                              {session.completed_count}/{session.total_meals} refeições
+                            </span>
+                          </div>
+                        </div>
+                        <div className="text-right flex-shrink-0">
+                          <p className={`text-sm font-bold ${pct === 100 ? 'text-teal-600 dark:text-teal-400' : 'text-foreground'}`}>{pct}%</p>
+                          {session.xp_earned > 0 && (
+                            <p className="text-xs text-amber-500 flex items-center gap-0.5 justify-end">
+                              <Zap className="w-3 h-3" />{session.xp_earned} XP
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              </CardContent>
+            </Card>
+          )}
         </>
       )}
     </div>

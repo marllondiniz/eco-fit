@@ -76,11 +76,6 @@ export default function TreinosPage() {
     setConfirmId(null)
   }
 
-  async function ignorarRequest(id: string) {
-    await supabase.from('plan_requests').update({ status: 'cancelled' }).eq('id', id)
-    setRequests(prev => prev.filter(r => r.id !== id))
-  }
-
   function togglePlan(key: string) {
     setExpanded(prev => {
       const next = new Set(prev)
@@ -176,14 +171,6 @@ export default function TreinosPage() {
                           Criar plano
                         </Button>
                       </Link>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => ignorarRequest(req.id)}
-                        className="text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        Ignorar
-                      </Button>
                     </div>
                   </div>
                 </CardContent>
