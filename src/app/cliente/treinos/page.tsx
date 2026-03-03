@@ -135,7 +135,7 @@ export default function ClienteTreinosPage() {
     ] = await Promise.all([
       supabase
         .from('workouts')
-        .select('*, workout_exercises(id, division_label, name, sets, reps, rest_seconds, notes, order_index, alternative_name, alternative_notes), profiles!workouts_professional_id_fkey(full_name)')
+        .select('*, workout_exercises(id, division_label, name, sets, reps, rest_seconds, notes, order_index, alternative_name, alternative_notes, alternatives), profiles!workouts_professional_id_fkey(full_name)')
         .eq('client_id', user.id)
         .eq('status', 'sent')
         .order('end_date', { ascending: false, nullsFirst: false }),
@@ -196,6 +196,12 @@ export default function ClienteTreinosPage() {
   }, [today, yesterday, todayDayOfWeek])
 
   useEffect(() => { loadData() }, [loadData])
+
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') loadData() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [loadData])
 
   async function toggleExercise(workoutId: string, exerciseId: string, totalExercises: number) {
     if (!userId || savingExercise) return
@@ -705,10 +711,10 @@ export default function ClienteTreinosPage() {
                           <span>Progresso de hoje</span>
                           <span className="font-semibold text-foreground">{doneCount}/{totalEx} exercícios ({progressPct}%)</span>
                         </div>
-                        <div className="w-full bg-muted rounded-full h-2">
+                        <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
                           <div
                             className={`h-2 rounded-full transition-all duration-500 ${isComplete ? 'bg-emerald-500' : 'bg-primary'}`}
-                            style={{ width: `${progressPct}%` }}
+                            style={{ width: `${Math.min(100, progressPct)}%` }}
                           />
                         </div>
                         {isComplete && (
@@ -790,25 +796,35 @@ export default function ClienteTreinosPage() {
                                 </div>
                               </div>
 
-                              {/* Exercício alternativo */}
-                              {ex.alternative_name && (
-                                <div className="ml-4 pl-3 border-l-2 border-dashed border-violet-300 dark:border-violet-700">
-                                  <div className="border border-violet-200 dark:border-violet-800 rounded-xl p-3 bg-violet-50/50 dark:bg-violet-950/20">
-                                    <div className="flex items-start gap-2">
-                                      <ChevronsUpDown className="w-3.5 h-3.5 text-violet-500 flex-shrink-0 mt-0.5" />
-                                      <div className="flex-1 min-w-0">
-                                        <p className="text-xs font-semibold text-violet-600 dark:text-violet-400 mb-0.5">
-                                          Opção 2 (alternativa)
+                              {/* Exercícios alternativos */}
+                              {(() => {
+                                const alts: { name: string; notes?: string }[] =
+                                  Array.isArray(ex.alternatives) && ex.alternatives.length > 0
+                                    ? ex.alternatives
+                                    : ex.alternative_name
+                                      ? [{ name: ex.alternative_name, notes: ex.alternative_notes ?? '' }]
+                                      : []
+                                if (alts.length === 0) return null
+                                return (
+                                  <div className="ml-4 pl-3 border-l-2 border-dashed border-violet-300 dark:border-violet-700 space-y-2">
+                                    <p className="text-xs font-semibold text-violet-600 dark:text-violet-400 flex items-center gap-1">
+                                      <ChevronsUpDown className="w-3 h-3" />
+                                      {alts.length === 1 ? 'Alternativa' : `${alts.length} alternativas`}
+                                    </p>
+                                    {alts.map((alt, aIdx) => (
+                                      <div key={aIdx} className="border border-violet-200 dark:border-violet-800 rounded-xl p-3 bg-violet-50/50 dark:bg-violet-950/20">
+                                        <p className="text-xs text-violet-500 dark:text-violet-400 font-medium mb-0.5">
+                                          Opção {aIdx + 2}
                                         </p>
-                                        <p className="text-sm text-foreground font-medium">{ex.alternative_name}</p>
-                                        {ex.alternative_notes && (
-                                          <p className="text-xs text-muted-foreground mt-0.5">{ex.alternative_notes}</p>
+                                        <p className="text-sm text-foreground font-medium">{alt.name}</p>
+                                        {alt.notes && (
+                                          <p className="text-xs text-muted-foreground mt-0.5">{alt.notes}</p>
                                         )}
                                       </div>
-                                    </div>
+                                    ))}
                                   </div>
-                                </div>
-                              )}
+                                )
+                              })()}
                             </div>
                           )
                         })}
@@ -819,10 +835,10 @@ export default function ClienteTreinosPage() {
                       </p>
                     )}
 
-                    {/* Observações do treino */}
+                    {/* Instruções do treino */}
                     {workout.notes && (
                       <div className="bg-muted rounded-xl p-3">
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Observações do personal</p>
+                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-1">Instruções do treino</p>
                         <p className="text-sm text-foreground">{workout.notes}</p>
                       </div>
                     )}
@@ -929,14 +945,14 @@ export default function ClienteTreinosPage() {
                       <span>Progresso de hoje</span>
                       <span className="font-semibold text-foreground">{progressPct}%</span>
                     </div>
-                    <div className="w-full bg-muted rounded-full h-2.5">
+                    <div className="w-full bg-muted rounded-full h-2.5 overflow-hidden">
                       <div
                         className={`h-2.5 rounded-full transition-all duration-500 ${
                           isComplete
                             ? 'bg-gradient-to-r from-emerald-500 to-emerald-400'
                             : 'bg-gradient-to-r from-blue-500 to-blue-400'
                         }`}
-                        style={{ width: `${progressPct}%` }}
+                        style={{ width: `${Math.min(100, progressPct)}%` }}
                       />
                     </div>
                   </div>
@@ -968,49 +984,75 @@ export default function ClienteTreinosPage() {
                               const done = session?.completed_exercise_ids?.includes(ex.id) ?? false
                               const saving = savingExercise === ex.id
                               return (
-                                <button
-                                  key={ex.id}
-                                  onClick={() => toggleExercise(treino.id, ex.id, totalEx)}
-                                  disabled={!!saving}
-                                  className={`w-full text-left border rounded-xl p-4 transition-all duration-200 ${
-                                    done
-                                      ? 'border-emerald-200 dark:border-emerald-700 bg-emerald-50/50 dark:bg-emerald-950/30'
-                                      : 'border-border hover:border-primary/40 hover:bg-muted/40'
-                                  } ${saving ? 'opacity-70 cursor-wait' : 'cursor-pointer'}`}
-                                >
-                                  <div className="flex items-start gap-3">
-                                    <div className="flex-shrink-0 mt-0.5">
-                                      {done ? (
-                                        <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                                      ) : (
-                                        <Circle className="w-5 h-5 text-muted-foreground/40" />
-                                      )}
-                                    </div>
-                                    <div className="flex-1 min-w-0">
-                                      <div className="flex items-start justify-between gap-2">
-                                        <p className={`font-medium text-sm ${done ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
-                                          {ex.name}
-                                        </p>
-                                        <div className="flex items-center gap-2 flex-shrink-0">
-                                          {ex.sets && ex.reps && (
-                                            <Badge variant="secondary" className="text-xs">
-                                              {ex.sets}×{ex.reps}
-                                            </Badge>
-                                          )}
-                                          {ex.rest_seconds && (
-                                            <span className="flex items-center gap-1 text-xs text-muted-foreground">
-                                              <Timer className="w-3 h-3" />
-                                              {ex.rest_seconds}s
-                                            </span>
-                                          )}
-                                        </div>
+                                <div key={ex.id} className="space-y-1.5">
+                                  <button
+                                    onClick={() => toggleExercise(treino.id, ex.id, totalEx)}
+                                    disabled={!!saving}
+                                    className={`w-full text-left border rounded-xl p-4 transition-all duration-200 ${
+                                      done
+                                        ? 'border-emerald-200 dark:border-emerald-700 bg-emerald-50/50 dark:bg-emerald-950/30'
+                                        : 'border-border hover:border-primary/40 hover:bg-muted/40'
+                                    } ${saving ? 'opacity-70 cursor-wait' : 'cursor-pointer'}`}
+                                  >
+                                    <div className="flex items-start gap-3">
+                                      <div className="flex-shrink-0 mt-0.5">
+                                        {done ? (
+                                          <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                                        ) : (
+                                          <Circle className="w-5 h-5 text-muted-foreground/40" />
+                                        )}
                                       </div>
-                                      {ex.notes && (
-                                        <p className="text-xs text-muted-foreground mt-1">{ex.notes}</p>
-                                      )}
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-start justify-between gap-2">
+                                          <p className={`font-medium text-sm ${done ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
+                                            {ex.name}
+                                          </p>
+                                          <div className="flex items-center gap-2 flex-shrink-0">
+                                            {ex.sets && ex.reps && (
+                                              <Badge variant="secondary" className="text-xs">
+                                                {ex.sets}×{ex.reps}
+                                              </Badge>
+                                            )}
+                                            {ex.rest_seconds && (
+                                              <span className="flex items-center gap-1 text-xs text-muted-foreground">
+                                                <Timer className="w-3 h-3" />
+                                                {ex.rest_seconds}s
+                                              </span>
+                                            )}
+                                          </div>
+                                        </div>
+                                        {ex.notes && (
+                                          <p className="text-xs text-muted-foreground mt-1">{ex.notes}</p>
+                                        )}
+                                      </div>
                                     </div>
-                                  </div>
-                                </button>
+                                  </button>
+                                  {/* Alternativas */}
+                                  {(() => {
+                                    const alts: { name: string; notes?: string }[] =
+                                      Array.isArray(ex.alternatives) && ex.alternatives.length > 0
+                                        ? ex.alternatives
+                                        : ex.alternative_name
+                                          ? [{ name: ex.alternative_name, notes: ex.alternative_notes ?? '' }]
+                                          : []
+                                    if (alts.length === 0) return null
+                                    return (
+                                      <div className="ml-4 pl-3 border-l-2 border-dashed border-violet-300 dark:border-violet-700 space-y-1.5">
+                                        <p className="text-[11px] font-semibold text-violet-500 dark:text-violet-400 flex items-center gap-1">
+                                          <ChevronsUpDown className="w-3 h-3" />
+                                          {alts.length === 1 ? 'Alternativa' : `${alts.length} alternativas`}
+                                        </p>
+                                        {alts.map((alt, aIdx) => (
+                                          <div key={aIdx} className="border border-violet-200 dark:border-violet-800 rounded-xl p-3 bg-violet-50/40 dark:bg-violet-950/20">
+                                            <p className="text-[10px] text-violet-500 dark:text-violet-400 font-semibold mb-0.5">Opção {aIdx + 2}</p>
+                                            <p className="text-sm text-foreground font-medium">{alt.name}</p>
+                                            {alt.notes && <p className="text-xs text-muted-foreground mt-0.5">{alt.notes}</p>}
+                                          </div>
+                                        ))}
+                                      </div>
+                                    )
+                                  })()}
+                                </div>
                               )
                             })}
                           </div>

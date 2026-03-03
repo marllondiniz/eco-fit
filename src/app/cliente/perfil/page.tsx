@@ -15,7 +15,7 @@ import {
   User, Camera, Save, CheckCircle2, AlertCircle,
   Dumbbell, Utensils, Trophy, TrendingUp, Target,
   Flame, Calendar, History, Phone, Mail,
-  ChevronLeft, ChevronRight, Sparkles, ArrowRight, PartyPopper, ClipboardList, Heart, Send, Home,
+  ChevronLeft, ChevronRight, Sparkles, ArrowRight, PartyPopper, ClipboardList, Heart, Home,
   Upload, ImageIcon, Trash2, Loader2
 } from 'lucide-react'
 import Link from 'next/link'
@@ -40,10 +40,6 @@ function maskWeight(value: string): string {
 }
 
 function maskHeight(value: string): string {
-  return value.replace(/\D/g, '').slice(0, 3)
-}
-
-function maskAge(value: string): string {
   return value.replace(/\D/g, '').slice(0, 3)
 }
 
@@ -292,7 +288,7 @@ export default function PerfilPage() {
           training_experience:   a.training_experience ?? '',
           weekly_availability:   a.weekly_availability ?? '',
           session_duration_min:  String(a.session_duration_min ?? ''),
-          can_train_twice_daily: a.can_train_twice_daily ? 'Sim' : '',
+          can_train_twice_daily: a.can_train_twice_daily === true ? 'Sim' : a.can_train_twice_daily === false ? 'Não' : '',
           does_aerobic:          a.does_aerobic ?? '',
           aerobic_type:          a.aerobic_type ?? '',
           aerobic_frequency:     a.aerobic_frequency ?? '',
@@ -303,7 +299,7 @@ export default function PerfilPage() {
           muscle_priorities:     a.muscle_priorities ?? '',
           desired_timeframe:     a.desired_timeframe ?? '',
           meals_per_day:         a.meals_per_day ?? '',
-          skips_meals:           a.skips_meals ? 'Sim' : '',
+          skips_meals:           a.skips_meals === true ? 'Sim' : a.skips_meals === false ? 'Não' : '',
           food_allergies:        a.food_allergies ?? '',
           food_preferences:      a.food_preferences ?? '',
           disliked_foods:        a.disliked_foods ?? '',
@@ -340,10 +336,10 @@ export default function PerfilPage() {
       ].sort((a, b) => new Date(b.sent_at ?? 0).getTime() - new Date(a.sent_at ?? 0).getTime())
       setHistItems(hist)
 
-      const isNewProfile = !profileExt || (!profileExt.age && !profileExt.weight_kg)
+      const isNewProfile = !profileExt || (!profileExt.date_of_birth && !profileExt.weight_kg)
       const hasNoAnamnese = !anamneseData || !anamneseData.confirmed
       if (isNewProfile) setShowWelcome(true)
-      else if (hasNoAnamnese && profileExt?.age) {
+      else if (hasNoAnamnese && (profileExt?.age || profileExt?.date_of_birth)) {
         setActiveTab('anamnese')
       }
 
@@ -449,7 +445,7 @@ export default function PerfilPage() {
       }).eq('id', userId),
       supabase.from('client_profiles').upsert({
         user_id:        userId,
-        age:            profile.age ? parseInt(profile.age) : null,
+        age:            profile.date_of_birth ? Math.floor((Date.now() - new Date(profile.date_of_birth).getTime()) / (365.25 * 24 * 60 * 60 * 1000)) : null,
         sex:            profile.sex || null,
         height_cm:      profile.height_cm ? parseFloat(profile.height_cm) : null,
         weight_kg:      profile.weight_kg ? parseFloat(profile.weight_kg) : null,
@@ -540,7 +536,7 @@ export default function PerfilPage() {
         .update({ onboarding_completed: true })
         .eq('id', userId)
 
-      // Buscar profissional responsável
+      // Vincular profissional responsável (se houver convite)
       let professionalId: string | null = null
       if (userEmail) {
         const { data: invite } = await supabase
@@ -581,12 +577,6 @@ export default function PerfilPage() {
           .from('client_profiles')
           .upsert({ user_id: userId, invited_by: professionalId }, { onConflict: 'user_id' })
       }
-
-      // Enviar solicitações: treino+dieta e cardio
-      await supabase.from('plan_requests').insert([
-        { client_id: userId, professional_id: professionalId, type: 'both',   status: 'pending' },
-        { client_id: userId, professional_id: professionalId, type: 'cardio', status: 'pending' },
-      ])
 
       setOnboardingAlreadyDone(true)
       setShowComplete(true)
@@ -630,9 +620,8 @@ export default function PerfilPage() {
   const REQUIRED_PROFILE_FIELDS: { key: string; label: string }[] = [
     { key: 'userName', label: 'Nome completo' },
     { key: 'userPhone', label: 'Telefone' },
-    { key: 'age', label: 'Idade' },
-    { key: 'sex', label: 'Sexo' },
     { key: 'date_of_birth', label: 'Data de nascimento' },
+    { key: 'sex', label: 'Sexo' },
     { key: 'height_cm', label: 'Altura' },
     { key: 'weight_kg', label: 'Peso' },
     { key: 'profession', label: 'Profissão' },
@@ -776,17 +765,17 @@ export default function PerfilPage() {
           <div className="space-y-2">
             <h1 className="text-2xl font-bold text-foreground">Parabéns, {userName?.split(' ')[0] || 'tudo pronto'}!</h1>
             <p className="text-muted-foreground text-sm leading-relaxed">
-              Seu cadastro foi concluído com sucesso. Já enviamos automaticamente uma <strong>solicitação de plano</strong> para seu profissional responsável.
+              Seu cadastro foi concluído com sucesso. Agora você pode solicitar seus planos diretamente nas áreas de <strong>Dieta</strong>, <strong>Treino</strong> e <strong>Cardio</strong>.
             </p>
           </div>
 
           <div className="bg-card border border-border rounded-xl p-4 space-y-3 text-left">
             <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
-              <Send className="w-4 h-4 text-primary" />
-              Solicitação enviada
+              <ArrowRight className="w-4 h-4 text-primary" />
+              Próximos passos
             </div>
             <p className="text-xs text-muted-foreground leading-relaxed">
-              Seu personal/nutricionista já foi notificado e em breve irá preparar seus planos personalizados com base nas informações que você preencheu.
+              Acesse cada área e solicite seus planos. Seu profissional será notificado e preparará tudo com base nas informações que você preencheu.
             </p>
             <div className="grid grid-cols-3 gap-2 pt-1">
               <div className="flex flex-col items-center gap-1.5 p-2.5 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-100 dark:border-blue-900/50">
@@ -804,19 +793,12 @@ export default function PerfilPage() {
             </div>
           </div>
 
-          <div className="bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-100 dark:border-emerald-900/50 rounded-xl px-4 py-3 flex items-start gap-2.5">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 mt-0.5 flex-shrink-0" />
-            <p className="text-xs text-emerald-700 dark:text-emerald-400 text-left leading-relaxed">
-              Enquanto aguarda, explore a plataforma. Assim que seus planos estiverem prontos, eles aparecerão na sua página inicial.
-            </p>
-          </div>
-
-          <Link
-            href="/cliente"
+          <button
+            onClick={() => window.location.href = '/cliente'}
             className="flex items-center justify-center gap-2 w-full bg-emerald-600 hover:bg-emerald-700 text-white h-12 text-base font-medium rounded-lg transition-colors"
           >
             <Home className="w-5 h-5" /> Ir para a página inicial
-          </Link>
+          </button>
         </div>
       </div>
     )
@@ -1042,10 +1024,6 @@ export default function PerfilPage() {
               {profileStep === 2 && (
                 <div className="space-y-4">
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-                    <div className="space-y-1.5">
-                      <Label htmlFor="age" className={!profile.age ? 'text-red-600 dark:text-red-400' : ''}>Idade *</Label>
-                      <Input id="age" inputMode="numeric" value={profile.age} onChange={e => setProfile(p => ({ ...p, age: maskAge(e.target.value) }))} placeholder="Ex: 25" maxLength={3} className={!profile.age ? 'border-red-300 dark:border-red-700' : ''} />
-                    </div>
                     <div className="space-y-1.5">
                       <Label htmlFor="dob" className={!profile.date_of_birth ? 'text-red-600 dark:text-red-400' : ''}>Data de nascimento *</Label>
                       <Input id="dob" type="date" value={profile.date_of_birth} onChange={e => setProfile(p => ({ ...p, date_of_birth: e.target.value }))} className={!profile.date_of_birth ? 'border-red-300 dark:border-red-700' : ''} />

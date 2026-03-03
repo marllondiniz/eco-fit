@@ -112,6 +112,12 @@ export default function ClienteDietasPage() {
   }, [loadData])
 
   useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') loadData() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [loadData])
+
+  useEffect(() => {
     document.title = 'LB.FIT — Minhas Dietas'
     return () => { document.title = 'LB.FIT' }
   }, [])

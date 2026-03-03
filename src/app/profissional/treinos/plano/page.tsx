@@ -10,7 +10,7 @@ import { Label } from '@/components/ui/label'
 import { Textarea } from '@/components/ui/textarea'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Badge } from '@/components/ui/badge'
-import { Plus, Trash2, ChevronLeft, Send, Calendar, Dumbbell, User, Info, Sparkles, Loader2, ChevronsUpDown } from 'lucide-react'
+import { Plus, Trash2, ChevronLeft, Send, Calendar, Dumbbell, User, Info, Sparkles, Loader2 } from 'lucide-react'
 import Link from 'next/link'
 import { AnamnesePanel } from '@/components/AnamnesePanel'
 import { ExerciseCombobox } from '@/components/ExerciseCombobox'
@@ -65,6 +65,11 @@ const LABEL_COLORS: Record<string, string> = {
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
+interface Alternative {
+  name: string
+  notes: string
+}
+
 interface Exercicio {
   id: string
   name: string
@@ -72,9 +77,8 @@ interface Exercicio {
   reps: string
   rest_seconds: string
   notes: string
-  alt_name: string   // exercício alternativo (opcional)
-  alt_notes: string  // observação da alternativa
-  showAlt: boolean   // controle UI
+  alternatives: Alternative[]
+  showAlts: boolean
 }
 
 interface WorkoutData {
@@ -88,7 +92,7 @@ interface WorkoutData {
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function novoEx(): Exercicio {
-  return { id: Math.random().toString(36).slice(2), name: '', sets: '', reps: '', rest_seconds: '', notes: '', alt_name: '', alt_notes: '', showAlt: false }
+  return { id: Math.random().toString(36).slice(2), name: '', sets: '', reps: '', rest_seconds: '', notes: '', alternatives: [], showAlts: false }
 }
 
 function novoWorkout(label: string): WorkoutData {
@@ -176,14 +180,45 @@ function PlanoForm() {
     ))
   }
 
-  function toggleAlt(wIdx: number, eIdx: number) {
+  function toggleAlts(wIdx: number, eIdx: number) {
     setWorkouts(prev => prev.map((w, i) => i !== wIdx ? w : {
       ...w,
-      exercises: w.exercises.map((e, j) => j !== eIdx ? e : { ...e, showAlt: !e.showAlt }),
+      exercises: w.exercises.map((e, j) => j !== eIdx ? e : { ...e, showAlts: !e.showAlts }),
     }))
   }
 
-  function updateEx(wIdx: number, eIdx: number, field: keyof Omit<Exercicio, 'id'>, value: string) {
+  function addAlt(wIdx: number, eIdx: number) {
+    setWorkouts(prev => prev.map((w, i) => i !== wIdx ? w : {
+      ...w,
+      exercises: w.exercises.map((e, j) => j !== eIdx ? e : {
+        ...e,
+        alternatives: [...e.alternatives, { name: '', notes: '' }],
+        showAlts: true,
+      }),
+    }))
+  }
+
+  function removeAlt(wIdx: number, eIdx: number, aIdx: number) {
+    setWorkouts(prev => prev.map((w, i) => i !== wIdx ? w : {
+      ...w,
+      exercises: w.exercises.map((e, j) => j !== eIdx ? e : {
+        ...e,
+        alternatives: e.alternatives.filter((_, k) => k !== aIdx),
+      }),
+    }))
+  }
+
+  function updateAlt(wIdx: number, eIdx: number, aIdx: number, field: keyof Alternative, value: string) {
+    setWorkouts(prev => prev.map((w, i) => i !== wIdx ? w : {
+      ...w,
+      exercises: w.exercises.map((e, j) => j !== eIdx ? e : {
+        ...e,
+        alternatives: e.alternatives.map((a, k) => k !== aIdx ? a : { ...a, [field]: value }),
+      }),
+    }))
+  }
+
+  function updateEx(wIdx: number, eIdx: number, field: keyof Omit<Exercicio, 'id' | 'alternatives' | 'showAlts'>, value: string) {
     setWorkouts(prev => prev.map((w, i) => i !== wIdx ? w : {
       ...w,
       exercises: w.exercises.map((e, j) => j !== eIdx ? e : { ...e, [field]: value }),
@@ -253,7 +288,7 @@ function PlanoForm() {
         return
       }
 
-      const aiWorkouts: { label: string; name: string; methodology: string; notes: string; exercises: { name: string; sets: number; reps: string; rest_seconds: number; notes: string }[] }[] = data.workouts ?? []
+      const aiWorkouts: { label: string; name: string; methodology: string; notes: string; exercises: { name: string; sets: number; reps: string; rest_seconds: number; notes: string; alternatives?: { name: string; notes?: string }[] }[] }[] = data.workouts ?? []
 
       if (!aiWorkouts.length) {
         setErroIA('A IA não retornou treinos. Tente novamente.')
@@ -265,17 +300,21 @@ function PlanoForm() {
         name:        w.name        || `Treino ${w.label}`,
         methodology: w.methodology || '',
         notes:       w.notes       || '',
-        exercises:   (w.exercises ?? []).map(e => ({
-          id:           Math.random().toString(36).slice(2),
-          name:         e.name         || '',
-          sets:         e.sets         ? String(e.sets)         : '',
-          reps:         e.reps         ? String(e.reps)         : '',
-          rest_seconds: e.rest_seconds ? String(e.rest_seconds) : '',
-          notes:        e.notes        || '',
-          alt_name:     '',
-          alt_notes:    '',
-          showAlt:      false,
-        })),
+        exercises:   (w.exercises ?? []).map(e => {
+          const alts: Alternative[] = (e.alternatives ?? [])
+            .filter((a: { name: string; notes?: string }) => a.name?.trim())
+            .map((a: { name: string; notes?: string }) => ({ name: a.name.trim(), notes: a.notes?.trim() || '' }))
+          return {
+            id:           Math.random().toString(36).slice(2),
+            name:         e.name         || '',
+            sets:         e.sets         ? String(e.sets)         : '',
+            reps:         e.reps         ? String(e.reps)         : '',
+            rest_seconds: e.rest_seconds ? String(e.rest_seconds) : '',
+            notes:        e.notes        || '',
+            alternatives: alts,
+            showAlts:     alts.length > 0,
+          }
+        }),
       })))
     } catch {
       setErroIA('Erro de conexão com a IA. Verifique OPENAI_API_KEY no .env.local.')
@@ -329,16 +368,15 @@ function PlanoForm() {
         const exRows = workout.exercises
           .filter(e => e.name.trim())
           .map((e, idx) => ({
-            workout_id:        wRow.id,
-            division_label:    workout.label,
-            name:              e.name.trim(),
-            sets:              e.sets ? parseInt(e.sets, 10) : null,
-            reps:              e.reps.trim() || null,
-            rest_seconds:      e.rest_seconds ? parseInt(e.rest_seconds, 10) : null,
-            notes:             e.notes.trim() || null,
-            alternative_name:  e.alt_name.trim() || null,
-            alternative_notes: e.alt_notes.trim() || null,
-            order_index:       idx,
+            workout_id:     wRow.id,
+            division_label: workout.label,
+            name:           e.name.trim(),
+            sets:           e.sets ? parseInt(e.sets, 10) : null,
+            reps:           e.reps.trim() || null,
+            rest_seconds:   e.rest_seconds ? parseInt(e.rest_seconds, 10) : null,
+            notes:          e.notes.trim() || null,
+            alternatives:   e.alternatives.filter(a => a.name.trim()),
+            order_index:    idx,
           }))
 
         if (exRows.length > 0) {
@@ -584,7 +622,7 @@ function PlanoForm() {
                 />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
-                <Label className="text-sm">Observações do treino</Label>
+                <Label className="text-sm">Instruções do treino</Label>
                 <Textarea
                   value={workout.notes}
                   onChange={e => updateWorkout(wIdx, 'notes', e.target.value)}
@@ -661,44 +699,47 @@ function PlanoForm() {
                     </Button>
                   </div>
 
-                  {/* Alternativa */}
-                  {ex.showAlt ? (
-                    <div className="ml-2 pl-3 border-l-2 border-dashed border-violet-300 dark:border-violet-700 space-y-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-medium text-violet-600 dark:text-violet-400">Opção 2 (alternativa)</span>
-                        <button
-                          type="button"
-                          onClick={() => toggleAlt(wIdx, eIdx)}
-                          className="text-xs text-muted-foreground hover:text-red-500 ml-auto"
-                        >
-                          remover
-                        </button>
+                  {/* Alternativas */}
+                  <div className="ml-2 pl-3 border-l-2 border-dashed border-violet-300 dark:border-violet-700 space-y-1.5">
+                    {ex.showAlts && ex.alternatives.map((alt, aIdx) => (
+                      <div key={aIdx} className="space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-medium text-violet-600 dark:text-violet-400">
+                            Alternativa {aIdx + 1}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeAlt(wIdx, eIdx, aIdx)}
+                            className="text-xs text-muted-foreground hover:text-red-500 ml-auto"
+                          >
+                            remover
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-12 gap-2 items-center">
+                          <ExerciseCombobox
+                            value={alt.name}
+                            onChange={v => updateAlt(wIdx, eIdx, aIdx, 'name', v)}
+                            placeholder="Exercício alternativo…"
+                            className="col-span-12 sm:col-span-9"
+                          />
+                          <Input
+                            value={alt.notes}
+                            onChange={e => updateAlt(wIdx, eIdx, aIdx, 'notes', e.target.value)}
+                            placeholder="Obs. (opcional)"
+                            className="col-span-12 sm:col-span-3 text-sm h-9"
+                          />
+                        </div>
                       </div>
-                      <div className="grid grid-cols-12 gap-2 items-center">
-                        <ExerciseCombobox
-                          value={ex.alt_name}
-                          onChange={v => updateEx(wIdx, eIdx, 'alt_name', v)}
-                          placeholder="Exercício alternativo…"
-                          className="col-span-12 sm:col-span-9"
-                        />
-                        <Input
-                          value={ex.alt_notes}
-                          onChange={e => updateEx(wIdx, eIdx, 'alt_notes', e.target.value)}
-                          placeholder="Obs. (opcional)"
-                          className="col-span-12 sm:col-span-3 text-sm h-9"
-                        />
-                      </div>
-                    </div>
-                  ) : (
+                    ))}
                     <button
                       type="button"
-                      onClick={() => toggleAlt(wIdx, eIdx)}
-                      className="text-xs text-violet-600 dark:text-violet-400 hover:opacity-80 flex items-center gap-1 ml-1"
+                      onClick={() => addAlt(wIdx, eIdx)}
+                      className="text-xs text-violet-600 dark:text-violet-400 hover:opacity-80 flex items-center gap-1"
                     >
-                      <ChevronsUpDown className="w-3 h-3" />
-                      Adicionar alternativa
+                      <Plus className="w-3 h-3" />
+                      {ex.alternatives.length === 0 ? 'Adicionar alternativa' : 'Adicionar outra alternativa'}
                     </button>
-                  )}
+                  </div>
                 </div>
               ))}
             </div>

@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
 import { getLocalDateString } from '@/lib/date-utils'
+import { Flame } from 'lucide-react'
 
 function getGreeting() {
   const h = new Date().getHours()
@@ -12,10 +13,14 @@ function getGreeting() {
 }
 
 function getMotivation(streak: number, hasActivityToday: boolean) {
-  if (streak >= 7) return `Você está imparável! ${streak} dias seguidos!`
-  if (streak >= 3) return `${streak} dias seguidos — continue assim!`
-  if (hasActivityToday) return 'Ótimo trabalho hoje! Continue evoluindo.'
-  return 'Vamos continuar sua evolução hoje?'
+  if (streak >= 7) return `${streak} dias seguidos — você está imparável!`
+  if (streak >= 3) return `${streak} dias seguidos, continue assim!`
+  if (hasActivityToday) return 'Ótimo trabalho hoje!'
+  return 'Vamos evoluir hoje?'
+}
+
+function getDayLabel() {
+  return new Date().toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
 }
 
 interface ClienteGreetingProps {
@@ -24,6 +29,7 @@ interface ClienteGreetingProps {
 
 export function ClienteGreeting({ firstName }: ClienteGreetingProps) {
   const [greeting, setGreeting] = useState('Boa noite')
+  const [dayLabel, setDayLabel] = useState('')
   const [mounted, setMounted] = useState(false)
   const [streak, setStreak] = useState(0)
   const [hasActivityToday, setHasActivityToday] = useState(false)
@@ -33,7 +39,10 @@ export function ClienteGreeting({ firstName }: ClienteGreetingProps) {
   }, [])
 
   useEffect(() => {
-    if (mounted) setGreeting(getGreeting())
+    if (mounted) {
+      setGreeting(getGreeting())
+      setDayLabel(getDayLabel())
+    }
   }, [mounted])
 
   useEffect(() => {
@@ -55,10 +64,24 @@ export function ClienteGreeting({ firstName }: ClienteGreetingProps) {
   const motivation = getMotivation(streak, hasActivityToday)
 
   return (
-    <div>
-      <p className="text-sm text-muted-foreground font-medium">{greeting},</p>
-      <h2 className="text-2xl font-bold text-foreground">{firstName}</h2>
-      <p className="text-muted-foreground mt-1 text-sm">{motivation}</p>
+    <div className="flex items-center justify-between gap-4">
+      <div>
+        <p className="text-xs font-medium text-muted-foreground uppercase tracking-widest">{greeting}</p>
+        <h2 className="text-2xl font-bold text-foreground leading-tight">{firstName}</h2>
+        {dayLabel && (
+          <p className="text-xs text-muted-foreground mt-0.5 capitalize">{dayLabel}</p>
+        )}
+      </div>
+
+      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+        <p className="text-xs text-muted-foreground text-right">{motivation}</p>
+        {streak > 0 && (
+          <div className="flex items-center gap-1 bg-orange-50 dark:bg-orange-950/40 border border-orange-100 dark:border-orange-900/50 rounded-full px-2.5 py-1">
+            <Flame className="w-3.5 h-3.5 text-orange-500" />
+            <span className="text-xs font-bold text-orange-600 dark:text-orange-400">{streak}</span>
+          </div>
+        )}
+      </div>
     </div>
   )
 }

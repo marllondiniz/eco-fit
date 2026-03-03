@@ -183,6 +183,8 @@ INSTRUÇÕES ADICIONAIS:
 - Use nomes de exercícios reais em português.
 - No campo "methodology" de cada treino, explique a estratégia (classificação do aluno, volume semanal definido, justificativa da organização).
 - No campo "notes" de cada treino, inclua a progressão dos microciclos e dicas de execução.
+- Cada treino deve ter NO MÍNIMO 5 exercícios. Nunca gere menos que isso.
+- Para CADA exercício, preencha obrigatoriamente o campo "alternatives" com EXATAMENTE 2 exercícios substitutos que trabalhem o mesmo grupamento muscular e padrão de movimento (útil quando o aluno não tem equipamento, tenha limitação ou queira variar). Cada alternativa deve ter "name" e "notes" (dica curta de por que usar essa opção). NÃO repita o exercício principal nem exercícios já usados como alternativas.
 - Descanso: 90-120s para compostos livres, 60-90s para máquinas/isoladores.
 
 Retorne APENAS um JSON válido (sem markdown, sem texto antes ou depois) neste formato exato:
@@ -204,7 +206,11 @@ Retorne APENAS um JSON válido (sem markdown, sem texto antes ou depois) neste f
           "sets": 4,
           "reps": "8-12",
           "rest_seconds": 90,
-          "notes": "1ª série: aquecimento 12-15 reps. Demais: trabalho até falha técnica."
+          "notes": "1ª série: aquecimento 12-15 reps. Demais: trabalho até falha técnica.",
+          "alternatives": [
+            { "name": "Exercício alternativo 1", "notes": "Motivo ou dica de uso" },
+            { "name": "Exercício alternativo 2", "notes": "Motivo ou dica de uso" }
+          ]
         }
       ]
     }`).join(',\n    ')}

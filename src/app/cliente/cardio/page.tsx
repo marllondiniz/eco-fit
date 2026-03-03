@@ -59,7 +59,7 @@ export default function ClienteCardioPage() {
         .select('id')
         .eq('client_id', user.id)
         .in('status', ['pending', 'in_progress'])
-        .eq('type', 'cardio')
+        .in('type', ['cardio', 'both'])
         .limit(1)
         .maybeSingle(),
     ])
@@ -73,6 +73,12 @@ export default function ClienteCardioPage() {
 
   useEffect(() => {
     loadData()
+  }, [loadData])
+
+  useEffect(() => {
+    const onVisible = () => { if (document.visibilityState === 'visible') loadData() }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
   }, [loadData])
 
   useEffect(() => {

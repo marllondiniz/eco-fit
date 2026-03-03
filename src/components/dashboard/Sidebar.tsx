@@ -70,10 +70,12 @@ export function Sidebar({ role, onClose, onboardingComplete = true }: SidebarPro
   const profType: ProfessionalType | null =
     role === 'personal' ? (profile?.professional_type ?? 'both') : null
 
+  const isComplete = onboardingComplete || profile?.onboarding_completed === true
+
   let navItems = NAV_BY_ROLE[role] ?? NAV_BY_ROLE.user
 
   // Cliente sem onboarding: apenas Perfil
-  if (role === 'user' && !onboardingComplete) {
+  if (role === 'user' && !isComplete) {
     navItems = [{ label: 'Perfil', href: '/cliente/perfil', icon: UserCircle }]
   }
 

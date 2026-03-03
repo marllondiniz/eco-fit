@@ -8,7 +8,7 @@ interface Props {
   onSuccess?: () => void
 }
 
-export function SolicitarTreinoButton({ label = 'Solicitar treino e cardio', onSuccess }: Props) {
+export function SolicitarTreinoButton({ label = 'Solicitar treino', onSuccess }: Props) {
   const [state, setState] = useState<'idle' | 'loading' | 'done' | 'error'>('idle')
   const [msg, setMsg] = useState<string | null>(null)
 

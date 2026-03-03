@@ -96,7 +96,7 @@ export default function CardioPage() {
         .select('id, client_id, type, profiles!plan_requests_client_id_fkey(id, full_name, email)')
         .or(`professional_id.eq.${user.id},professional_id.is.null`)
         .eq('status', 'pending')
-        .in('type', ['workout', 'both', 'cardio'])
+        .in('type', ['cardio', 'both'])
         .order('created_at', { ascending: false }),
     ])
 
@@ -344,7 +344,7 @@ export default function CardioPage() {
                     <div>
                       <p className="font-semibold text-foreground text-sm">{name}</p>
                       <p className="text-xs text-muted-foreground">
-                        {req.type === 'cardio' ? 'Solicitou só cardio' : 'Solicitou plano de treino e cardio'}
+                        Solicitou plano de cardio
                       </p>
                     </div>
                   </div>

@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge'
 import {
   Plus, Trash2, ChevronLeft, Send, Calendar, Dumbbell,
-  User, Info, Sparkles, Loader2, ChevronsUpDown, Save,
+  User, Info, Sparkles, Loader2, Save,
 } from 'lucide-react'
 import Link from 'next/link'
 import { AnamnesePanel } from '@/components/AnamnesePanel'
@@ -56,6 +56,11 @@ const LABEL_COLORS: Record<string, string> = {
 
 // ─── Tipos ────────────────────────────────────────────────────────────────────
 
+interface Alternative {
+  name: string
+  notes: string
+}
+
 interface Exercicio {
   id: string          // UUID do DB ou gerado localmente
   dbId: string | null // UUID real do DB (null = novo exercício)
@@ -64,9 +69,8 @@ interface Exercicio {
   reps: string
   rest_seconds: string
   notes: string
-  alt_name: string
-  alt_notes: string
-  showAlt: boolean
+  alternatives: Alternative[]
+  showAlts: boolean
 }
 
 interface WorkoutData {
@@ -85,7 +89,7 @@ function novoEx(): Exercicio {
     id: Math.random().toString(36).slice(2),
     dbId: null,
     name: '', sets: '', reps: '', rest_seconds: '', notes: '',
-    alt_name: '', alt_notes: '', showAlt: false,
+    alternatives: [], showAlts: false,
   }
 }
 
@@ -176,18 +180,22 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
         if (!sib) return novoWorkout(lbl)
         const exs = (sib.workout_exercises ?? [])
           .sort((a: any, b: any) => a.order_index - b.order_index)
-          .map((e: any) => ({
-            id:           e.id,
-            dbId:         e.id,
-            name:         e.name         ?? '',
-            sets:         e.sets         != null ? String(e.sets)         : '',
-            reps:         e.reps         ?? '',
-            rest_seconds: e.rest_seconds != null ? String(e.rest_seconds) : '',
-            notes:        e.notes        ?? '',
-            alt_name:     e.alternative_name  ?? '',
-            alt_notes:    e.alternative_notes ?? '',
-            showAlt:      !!(e.alternative_name),
-          }))
+          .map((e: any) => {
+            const alts: Alternative[] = Array.isArray(e.alternatives) && e.alternatives.length > 0
+              ? e.alternatives
+              : (e.alternative_name ? [{ name: e.alternative_name, notes: e.alternative_notes ?? '' }] : [])
+            return {
+              id:           e.id,
+              dbId:         e.id,
+              name:         e.name         ?? '',
+              sets:         e.sets         != null ? String(e.sets)         : '',
+              reps:         e.reps         ?? '',
+              rest_seconds: e.rest_seconds != null ? String(e.rest_seconds) : '',
+              notes:        e.notes        ?? '',
+              alternatives: alts,
+              showAlts:     alts.length > 0,
+            }
+          })
         return {
           dbId:        sib.id,
           label:       lbl,
@@ -253,14 +261,45 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
     ))
   }
 
-  function toggleAlt(wIdx: number, eIdx: number) {
+  function toggleAlts(wIdx: number, eIdx: number) {
     setWorkouts(prev => prev.map((w, i) => i !== wIdx ? w : {
       ...w,
-      exercises: w.exercises.map((e, j) => j !== eIdx ? e : { ...e, showAlt: !e.showAlt }),
+      exercises: w.exercises.map((e, j) => j !== eIdx ? e : { ...e, showAlts: !e.showAlts }),
     }))
   }
 
-  function updateEx(wIdx: number, eIdx: number, field: keyof Omit<Exercicio, 'id' | 'dbId'>, value: string) {
+  function addAlt(wIdx: number, eIdx: number) {
+    setWorkouts(prev => prev.map((w, i) => i !== wIdx ? w : {
+      ...w,
+      exercises: w.exercises.map((e, j) => j !== eIdx ? e : {
+        ...e,
+        alternatives: [...e.alternatives, { name: '', notes: '' }],
+        showAlts: true,
+      }),
+    }))
+  }
+
+  function removeAlt(wIdx: number, eIdx: number, aIdx: number) {
+    setWorkouts(prev => prev.map((w, i) => i !== wIdx ? w : {
+      ...w,
+      exercises: w.exercises.map((e, j) => j !== eIdx ? e : {
+        ...e,
+        alternatives: e.alternatives.filter((_, k) => k !== aIdx),
+      }),
+    }))
+  }
+
+  function updateAlt(wIdx: number, eIdx: number, aIdx: number, field: keyof Alternative, value: string) {
+    setWorkouts(prev => prev.map((w, i) => i !== wIdx ? w : {
+      ...w,
+      exercises: w.exercises.map((e, j) => j !== eIdx ? e : {
+        ...e,
+        alternatives: e.alternatives.map((a, k) => k !== aIdx ? a : { ...a, [field]: value }),
+      }),
+    }))
+  }
+
+  function updateEx(wIdx: number, eIdx: number, field: keyof Omit<Exercicio, 'id' | 'dbId' | 'alternatives' | 'showAlts'>, value: string) {
     setWorkouts(prev => prev.map((w, i) => i !== wIdx ? w : {
       ...w,
       exercises: w.exercises.map((e, j) => j !== eIdx ? e : { ...e, [field]: value }),
@@ -319,18 +358,22 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
         name:        w.name        || `Treino ${w.label}`,
         methodology: w.methodology || '',
         notes:       w.notes       || '',
-        exercises:   (w.exercises ?? []).map((e: any) => ({
-          id:           Math.random().toString(36).slice(2),
-          dbId:         null,
-          name:         e.name         || '',
-          sets:         e.sets         ? String(e.sets)         : '',
-          reps:         e.reps         ? String(e.reps)         : '',
-          rest_seconds: e.rest_seconds ? String(e.rest_seconds) : '',
-          notes:        e.notes        || '',
-          alt_name:     '',
-          alt_notes:    '',
-          showAlt:      false,
-        })),
+        exercises:   (w.exercises ?? []).map((e: any) => {
+          const alts: Alternative[] = (e.alternatives ?? [])
+            .filter((a: any) => a.name?.trim())
+            .map((a: any) => ({ name: a.name.trim(), notes: a.notes?.trim() || '' }))
+          return {
+            id:           Math.random().toString(36).slice(2),
+            dbId:         null,
+            name:         e.name         || '',
+            sets:         e.sets         ? String(e.sets)         : '',
+            reps:         e.reps         ? String(e.reps)         : '',
+            rest_seconds: e.rest_seconds ? String(e.rest_seconds) : '',
+            notes:        e.notes        || '',
+            alternatives: alts,
+            showAlts:     alts.length > 0,
+          }
+        }),
       })))
     } catch {
       setErroIA('Erro de conexão com a IA. Verifique OPENAI_API_KEY no .env.local.')
@@ -407,16 +450,15 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
         const exRows = workout.exercises
           .filter(e => e.name.trim())
           .map((e, idx) => ({
-            workout_id:        workoutDbId!,
-            division_label:    workout.label,
-            name:              e.name.trim(),
-            sets:              e.sets         ? parseInt(e.sets, 10)         : null,
-            reps:              e.reps.trim()  || null,
-            rest_seconds:      e.rest_seconds ? parseInt(e.rest_seconds, 10) : null,
-            notes:             e.notes.trim() || null,
-            alternative_name:  e.alt_name.trim()  || null,
-            alternative_notes: e.alt_notes.trim() || null,
-            order_index:       idx,
+            workout_id:     workoutDbId!,
+            division_label: workout.label,
+            name:           e.name.trim(),
+            sets:           e.sets         ? parseInt(e.sets, 10)         : null,
+            reps:           e.reps.trim()  || null,
+            rest_seconds:   e.rest_seconds ? parseInt(e.rest_seconds, 10) : null,
+            notes:          e.notes.trim() || null,
+            alternatives:   e.alternatives.filter(a => a.name.trim()),
+            order_index:    idx,
           }))
 
         if (exRows.length > 0) {
@@ -646,7 +688,7 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
                 />
               </div>
               <div className="space-y-1.5 sm:col-span-2">
-                <Label className="text-sm">Observações do treino</Label>
+                <Label className="text-sm">Instruções do treino</Label>
                 <Textarea
                   value={workout.notes}
                   onChange={e => updateWorkout(wIdx, 'notes', e.target.value)}
@@ -723,44 +765,47 @@ export default function EditarPlanoPage({ params }: { params: Promise<{ id: stri
                     </Button>
                   </div>
 
-                  {/* Alternativa */}
-                  {ex.showAlt ? (
-                    <div className="ml-2 pl-3 border-l-2 border-dashed border-violet-300 dark:border-violet-700 space-y-1.5">
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-xs font-medium text-violet-600 dark:text-violet-400">Opção 2 (alternativa)</span>
-                        <button
-                          type="button"
-                          onClick={() => toggleAlt(wIdx, eIdx)}
-                          className="text-xs text-muted-foreground hover:text-red-500 ml-auto"
-                        >
-                          remover
-                        </button>
+                  {/* Alternativas */}
+                  <div className="ml-2 pl-3 border-l-2 border-dashed border-violet-300 dark:border-violet-700 space-y-1.5">
+                    {ex.showAlts && ex.alternatives.map((alt, aIdx) => (
+                      <div key={aIdx} className="space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-medium text-violet-600 dark:text-violet-400">
+                            Alternativa {aIdx + 1}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => removeAlt(wIdx, eIdx, aIdx)}
+                            className="text-xs text-muted-foreground hover:text-red-500 ml-auto"
+                          >
+                            remover
+                          </button>
+                        </div>
+                        <div className="grid grid-cols-12 gap-2 items-center">
+                          <ExerciseCombobox
+                            value={alt.name}
+                            onChange={v => updateAlt(wIdx, eIdx, aIdx, 'name', v)}
+                            placeholder="Exercício alternativo…"
+                            className="col-span-12 sm:col-span-9"
+                          />
+                          <Input
+                            value={alt.notes}
+                            onChange={e => updateAlt(wIdx, eIdx, aIdx, 'notes', e.target.value)}
+                            placeholder="Obs. (opcional)"
+                            className="col-span-12 sm:col-span-3 text-sm h-9"
+                          />
+                        </div>
                       </div>
-                      <div className="grid grid-cols-12 gap-2 items-center">
-                        <ExerciseCombobox
-                          value={ex.alt_name}
-                          onChange={v => updateEx(wIdx, eIdx, 'alt_name', v)}
-                          placeholder="Exercício alternativo…"
-                          className="col-span-12 sm:col-span-9"
-                        />
-                        <Input
-                          value={ex.alt_notes}
-                          onChange={e => updateEx(wIdx, eIdx, 'alt_notes', e.target.value)}
-                          placeholder="Obs. (opcional)"
-                          className="col-span-12 sm:col-span-3 text-sm h-9"
-                        />
-                      </div>
-                    </div>
-                  ) : (
+                    ))}
                     <button
                       type="button"
-                      onClick={() => toggleAlt(wIdx, eIdx)}
-                      className="text-xs text-violet-600 dark:text-violet-400 hover:opacity-80 flex items-center gap-1 ml-1"
+                      onClick={() => addAlt(wIdx, eIdx)}
+                      className="text-xs text-violet-600 dark:text-violet-400 hover:opacity-80 flex items-center gap-1"
                     >
-                      <ChevronsUpDown className="w-3 h-3" />
-                      Adicionar alternativa
+                      <Plus className="w-3 h-3" />
+                      {ex.alternatives.length === 0 ? 'Adicionar alternativa' : 'Adicionar outra alternativa'}
                     </button>
-                  )}
+                  </div>
                 </div>
               ))}
             </div>

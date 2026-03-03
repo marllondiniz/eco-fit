@@ -1,9 +1,12 @@
+import { unstable_noStore } from 'next/cache'
 import { createSupabaseServerClient } from '@/lib/supabase-server'
 import { getProfile } from '@/lib/supabase-server'
 import { ClienteGreeting } from '@/components/ClienteGreeting'
 import { ClienteEvolucaoBlock } from '@/components/ClienteEvolucaoBlock'
+import { RefreshOnFocus } from '@/components/RefreshOnFocus'
 
 export const metadata = { title: 'LB.FIT — Início' }
+export const dynamic = 'force-dynamic'
 
 function getFirstName(fullName: string | null) {
   if (!fullName) return 'Atleta'
@@ -11,6 +14,7 @@ function getFirstName(fullName: string | null) {
 }
 
 export default async function ClientePage() {
+  unstable_noStore()
   const supabase = await createSupabaseServerClient()
   const [{ data: { user } }, profile] = await Promise.all([
     supabase.auth.getUser(),
@@ -51,6 +55,7 @@ export default async function ClientePage() {
 
   return (
     <div className="space-y-6">
+      <RefreshOnFocus />
       <ClienteGreeting firstName={firstName} />
 
       <ClienteEvolucaoBlock

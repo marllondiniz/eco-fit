@@ -117,7 +117,7 @@ export default function DietasPage() {
                       <div className="min-w-0">
                         <p className="font-semibold text-foreground text-sm">{clientName}</p>
                         <p className="text-xs text-muted-foreground">
-                          Solicitou plano de {req.type === 'both' ? 'treino e dieta' : 'dieta'} · {formatDate(req.created_at)}
+                          Solicitou plano de dieta · {formatDate(req.created_at)}
                         </p>
                       </div>
                     </div>

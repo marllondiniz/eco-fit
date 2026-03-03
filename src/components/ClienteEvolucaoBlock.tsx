@@ -8,24 +8,20 @@ import {
   getLocalMonthStart,
   getLocalDayOfWeek,
 } from '@/lib/date-utils'
-import { Card, CardContent } from '@/components/ui/card'
-import { Badge } from '@/components/ui/badge'
 import {
   Utensils,
   Dumbbell,
   ArrowRight,
   Flame,
   Trophy,
-  TrendingUp,
-  Target,
   Zap,
   CheckCircle2,
   MoonStar,
   Activity,
+  Target,
+  TrendingUp,
 } from 'lucide-react'
 import Link from 'next/link'
-
-// ─── Tipos ────────────────────────────────────────────────────────────────────
 
 interface ClienteEvolucaoBlockProps {
   userId: string
@@ -33,8 +29,6 @@ interface ClienteEvolucaoBlockProps {
   dietas?: any[]
   scheduleMap: Record<string, string | null>
 }
-
-// ─── Helpers ──────────────────────────────────────────────────────────────────
 
 const DIAS_LABEL: Record<string, string> = {
   mon: 'segunda', tue: 'terça', wed: 'quarta',
@@ -55,21 +49,21 @@ function getProximoTreino(
   return null
 }
 
-// ─── Componente ───────────────────────────────────────────────────────────────
-
 export function ClienteEvolucaoBlock({
   userId,
   treinos,
   dietas = [],
   scheduleMap,
 }: ClienteEvolucaoBlockProps) {
-  const [todaySession, setTodaySession]     = useState<any[]>([])
-  const [sessionsThisWeek, setWeek]         = useState<any[]>([])
-  const [sessionsThisMonth, setMonth]       = useState<any[]>([])
-  const [gamification, setGamification]    = useState<any>(null)
-  const [loading, setLoading]               = useState(true)
+  const [todaySession, setTodaySession]   = useState<any[]>([])
+  const [sessionsThisWeek, setWeek]       = useState<any[]>([])
+  const [sessionsThisMonth, setMonth]     = useState<any[]>([])
+  const [gamification, setGamification]  = useState<any>(null)
+  const [loading, setLoading]             = useState(true)
+  const [todayDietSession, setTodayDietSession]     = useState<any>(null)
+  const [cardioPlan, setCardioPlan]                 = useState<any>(null)
+  const [cardioSessionToday, setCardioSessionToday] = useState<any>(null)
 
-  // Resolver treino do dia no cliente (timezone certa)
   const todayDow   = getLocalDayOfWeek()
   const todayLabel = scheduleMap[todayDow] ?? null
 
@@ -78,14 +72,9 @@ export function ClienteEvolucaoBlock({
     return treinos.find((t: any) => t.label === todayLabel) ?? null
   }, [todayLabel, treinos])
 
-  const hasSchedule    = Object.keys(scheduleMap).length > 0
   const hasActivePlan  = treinos.length > 0
   const hojeDescanso   = hasActivePlan && !treinoDoDia
   const proximoTreino  = hojeDescanso ? getProximoTreino(scheduleMap, todayDow) : null
-
-  const [todayDietSession, setTodayDietSession] = useState<any>(null)
-  const [cardioPlan, setCardioPlan] = useState<any>(null)
-  const [cardioSessionToday, setCardioSessionToday] = useState<any>(null)
 
   useEffect(() => {
     async function load() {
@@ -102,53 +91,18 @@ export function ClienteEvolucaoBlock({
         { data: cardioPlanData },
         { data: cardioTodayData },
       ] = await Promise.all([
-        supabase
-          .from('workout_sessions')
-          .select('workout_id, completed_count, total_exercises, is_complete')
-          .eq('user_id', userId)
-          .eq('date', today),
-        supabase
-          .from('workout_sessions')
-          .select('id, date, is_complete')
-          .eq('user_id', userId)
-          .gte('date', weekStart)
-          .lte('date', today),
-        supabase
-          .from('workout_sessions')
-          .select('id, date, is_complete, completed_count, total_exercises')
-          .eq('user_id', userId)
-          .gte('date', monthStart)
-          .lte('date', today),
+        supabase.from('workout_sessions').select('workout_id, completed_count, total_exercises, is_complete').eq('user_id', userId).eq('date', today),
+        supabase.from('workout_sessions').select('id, date, is_complete').eq('user_id', userId).gte('date', weekStart).lte('date', today),
+        supabase.from('workout_sessions').select('id, date, is_complete, completed_count, total_exercises').eq('user_id', userId).gte('date', monthStart).lte('date', today),
         supabase.from('user_gamification').select('*').eq('user_id', userId).maybeSingle(),
-        supabase
-          .from('diet_sessions')
-          .select('*')
-          .eq('user_id', userId)
-          .eq('date', today)
-          .order('created_at', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from('cardio_plans')
-          .select('id, prescription')
-          .eq('client_id', userId)
-          .eq('status', 'sent')
-          .or(`end_date.is.null,end_date.gte.${today}`)
-          .order('sent_at', { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-        supabase
-          .from('cardio_sessions')
-          .select('*')
-          .eq('user_id', userId)
-          .eq('date', today),
+        supabase.from('diet_sessions').select('*').eq('user_id', userId).eq('date', today).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('cardio_plans').select('id, prescription').eq('client_id', userId).eq('status', 'sent').or(`end_date.is.null,end_date.gte.${today}`).order('sent_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('cardio_sessions').select('*').eq('user_id', userId).eq('date', today),
       ])
 
       const plan = cardioPlanData ?? null
       const sessionsToday = (cardioTodayData ?? []) as any[]
-      const sessionForPlan = plan
-        ? sessionsToday.find((s: any) => s.cardio_plan_id === plan.id) ?? null
-        : null
+      const sessionForPlan = plan ? sessionsToday.find((s: any) => s.cardio_plan_id === plan.id) ?? null : null
 
       setTodaySession(todayData ?? [])
       setWeek(weekData ?? [])
@@ -162,387 +116,292 @@ export function ClienteEvolucaoBlock({
     load()
   }, [userId])
 
-  // Métricas
-  const today            = getLocalDateString()
-  const weeklyComplete   = sessionsThisWeek.filter(s => s.is_complete).length
-  const weeklyTarget     = gamification?.weekly_target_sessions ?? 0
-  const weeklyPct        = weeklyTarget > 0 ? Math.min(100, Math.round((weeklyComplete / weeklyTarget) * 100)) : 0
-  const monthComplete    = sessionsThisMonth.filter(s => s.is_complete).length
-  const daysInMonth      = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()
-  const monthAdherence   = Math.round((monthComplete / daysInMonth) * 100)
-  const streak           = gamification?.streak_days ?? 0
-  const totalXP          = gamification?.total_xp ?? 0
-  const level            = gamification?.level ?? 1
-  const hasActivityToday = todaySession.length > 0
-  const dietStreak       = gamification?.diet_streak_days ?? 0
-  const totalDietDays    = gamification?.total_diet_sessions ?? 0
-  const dietHojeDone     = todayDietSession?.is_complete ?? false
-  const dietMealsDone    = todayDietSession?.completed_count ?? 0
-  const dietMealsTotal   = todayDietSession?.total_meals ?? 0
-  const dietPctHoje      = dietMealsTotal > 0 ? Math.round((dietMealsDone / dietMealsTotal) * 100) : 0
+  const today          = getLocalDateString()
+  const weeklyComplete = sessionsThisWeek.filter(s => s.is_complete).length
+  const weeklyTarget   = gamification?.weekly_target_sessions ?? 0
+  const weeklyPct      = weeklyTarget > 0 ? Math.min(100, Math.round((weeklyComplete / weeklyTarget) * 100)) : 0
+  const monthComplete  = sessionsThisMonth.filter(s => s.is_complete).length
+  const daysInMonth    = new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).getDate()
+  const monthAdherence = Math.round((monthComplete / daysInMonth) * 100)
+  const streak         = gamification?.streak_days ?? 0
+  const totalXP        = gamification?.total_xp ?? 0
+  const level          = gamification?.level ?? 1
+  const dietStreak     = gamification?.diet_streak_days ?? 0
+  const totalDietDays  = gamification?.total_diet_sessions ?? 0
+  const dietHojeDone   = todayDietSession?.is_complete ?? false
+  const dietMealsDone  = todayDietSession?.completed_count ?? 0
+  const dietMealsTotal = todayDietSession?.total_meals ?? 0
+  const dietPctHoje    = dietMealsTotal > 0 ? Math.round((dietMealsDone / dietMealsTotal) * 100) : 0
 
-  // Progresso do treino de hoje
-  const todaySessForTreino = treinoDoDia
-    ? todaySession.find(s => s.workout_id === treinoDoDia.id)
-    : null
+  const todaySessForTreino = treinoDoDia ? todaySession.find(s => s.workout_id === treinoDoDia.id) : null
   const totalEx   = treinoDoDia?.workout_exercises?.length ?? 0
   const doneEx    = todaySessForTreino?.completed_count ?? 0
   const pctHoje   = totalEx > 0 ? Math.round((doneEx / totalEx) * 100) : 0
   const doneHoje  = todaySessForTreino?.is_complete ?? false
 
+  const hasStats = !!(gamification || sessionsThisWeek.length > 0 || totalDietDays > 0)
+
   if (loading) {
     return (
-      <div className="space-y-4">
-        <div className="rounded-2xl border bg-muted/30 animate-pulse h-40" />
-        <div className="rounded-xl border bg-muted/30 animate-pulse h-28" />
+      <div className="space-y-3">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="rounded-2xl border bg-card animate-pulse h-24" />
+        ))}
       </div>
     )
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
 
-      {/* ── Treino de hoje ────────────────────────────────────────────── */}
+      {/* ── Progresso em primeiro ─────────────────────────────────────── */}
+      {hasStats && (
+        <div className="space-y-2">
+          <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground px-0.5">Meu progresso</p>
+          <div className="grid grid-cols-4 gap-2">
+            <div className="bg-card border border-border rounded-xl p-3 text-center">
+              <p className="text-lg font-bold text-foreground">
+                {weeklyTarget > 0 ? `${weeklyComplete}/${weeklyTarget}` : weeklyComplete}
+              </p>
+              <p className="text-[10px] text-muted-foreground leading-tight">semana</p>
+            </div>
+            <div className="bg-card border border-border rounded-xl p-3 text-center">
+              <p className="text-lg font-bold text-foreground">{monthAdherence}%</p>
+              <p className="text-[10px] text-muted-foreground leading-tight">mês</p>
+            </div>
+            <div className="bg-card border border-border rounded-xl p-3 text-center">
+              <div className="flex items-center justify-center gap-1">
+                <Flame className="w-3.5 h-3.5 text-orange-500" />
+                <p className="text-lg font-bold text-foreground">{streak}</p>
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-tight">streak</p>
+            </div>
+            <div className="bg-card border border-border rounded-xl p-3 text-center">
+              <div className="flex items-center justify-center gap-1">
+                <Zap className="w-3.5 h-3.5 text-amber-500" />
+                <p className="text-lg font-bold text-foreground">{totalXP}</p>
+              </div>
+              <p className="text-[10px] text-muted-foreground leading-tight">XP · Nv {level}</p>
+            </div>
+          </div>
+          <Link
+            href="/cliente/progresso"
+            className="flex items-center justify-between w-full px-4 py-3 rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-colors group"
+          >
+            <div className="flex items-center gap-2.5">
+              <TrendingUp className="w-4 h-4 text-primary" />
+              <span className="text-sm font-semibold text-foreground">Ver minha evolução</span>
+            </div>
+            <ArrowRight className="w-4 h-4 text-primary group-hover:translate-x-0.5 transition-transform" />
+          </Link>
+        </div>
+      )}
+
+      {/* ── Treino de hoje ─────────────────────────────────────────────── */}
       {!hasActivePlan ? (
-        <Card>
-          <CardContent className="py-12 text-center space-y-2">
-            <Dumbbell className="w-10 h-10 text-muted-foreground/40 mx-auto" />
-            <p className="text-muted-foreground font-medium">Nenhum plano ativo ainda.</p>
-            <p className="text-sm text-muted-foreground">Seu profissional enviará um plano em breve.</p>
-            <Link
-              href="/cliente/treinos"
-              className="inline-flex items-center gap-1.5 text-sm text-primary font-medium mt-1 hover:opacity-80"
-            >
-              Ver meus treinos <ArrowRight className="w-3.5 h-3.5" />
-            </Link>
-          </CardContent>
-        </Card>
+        <Link href="/cliente/treinos" className="block group">
+          <div className="rounded-2xl border border-dashed border-border bg-card/50 p-5 flex items-center justify-between hover:border-primary/40 hover:bg-muted/30 transition-all">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center">
+                <Dumbbell className="w-5 h-5 text-muted-foreground/50" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Treino</p>
+                <p className="text-sm font-medium text-muted-foreground">Nenhum plano ativo</p>
+              </div>
+            </div>
+            <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+          </div>
+        </Link>
+
       ) : hojeDescanso ? (
-        <Card>
-          <CardContent className="p-5 flex items-center gap-4">
-            <div className="w-12 h-12 rounded-full bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0">
-              <MoonStar className="w-6 h-6 text-slate-500" />
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs text-muted-foreground font-semibold uppercase tracking-wide">Hoje</p>
-              <p className="text-lg font-bold text-foreground">Dia de descanso</p>
-              {proximoTreino && (
-                <p className="text-sm text-muted-foreground mt-0.5">
-                  Próximo treino: <span className="font-medium text-foreground">Treino {proximoTreino.label}</span>
-                  {' '}({DIAS_LABEL[proximoTreino.dow]})
-                </p>
-              )}
-            </div>
-            <Link
-              href="/cliente/treinos"
-              className="text-xs text-primary font-medium hover:opacity-80 flex items-center gap-1 flex-shrink-0"
-            >
-              Ver plano <ArrowRight className="w-3 h-3" />
-            </Link>
-          </CardContent>
-        </Card>
+        <div className="rounded-2xl border border-border bg-card p-5 flex items-center gap-4">
+          <div className="w-10 h-10 rounded-xl bg-slate-100 dark:bg-slate-800 flex items-center justify-center flex-shrink-0">
+            <MoonStar className="w-5 h-5 text-slate-500" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Hoje</p>
+            <p className="text-base font-bold text-foreground">Dia de descanso</p>
+            {proximoTreino && (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Próximo: <span className="font-medium text-foreground">Treino {proximoTreino.label}</span> ({DIAS_LABEL[proximoTreino.dow]})
+              </p>
+            )}
+          </div>
+          <Link href="/cliente/treinos" className="text-xs font-medium text-primary hover:opacity-80 flex items-center gap-1 flex-shrink-0">
+            Ver <ArrowRight className="w-3 h-3" />
+          </Link>
+        </div>
+
       ) : treinoDoDia ? (
-        <Card className={doneHoje
-          ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20'
-          : 'border-primary/20 bg-primary/5'
-        }>
-          <CardContent className="p-5 space-y-4">
-            <div className="flex items-center justify-between gap-3">
+        <Link href="/cliente/treinos" className="block group">
+          <div className={`rounded-2xl border p-5 transition-all ${
+            doneHoje
+              ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20'
+              : 'border-primary/20 bg-card hover:border-primary/40'
+          }`}>
+            <div className="flex items-center justify-between gap-3 mb-3">
               <div className="flex items-center gap-3 min-w-0">
-                <div className={`w-11 h-11 rounded-full flex items-center justify-center font-bold text-lg flex-shrink-0 ${
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-base flex-shrink-0 ${
                   doneHoje
                     ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400'
-                    : 'bg-primary/15 text-primary'
+                    : 'bg-primary/10 text-primary'
                 }`}>
-                  {doneHoje ? <CheckCircle2 className="w-6 h-6" /> : treinoDoDia.label}
+                  {doneHoje ? <CheckCircle2 className="w-5 h-5" /> : treinoDoDia.label}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Treino de hoje
-                  </p>
-                  <p className="text-base font-bold text-foreground truncate">{treinoDoDia.name}</p>
+                  <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Treino de hoje</p>
+                  <p className="text-sm font-bold text-foreground truncate">{treinoDoDia.name}</p>
                 </div>
               </div>
-              {doneHoje ? (
-                <Badge className="bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border-0 flex-shrink-0">
-                  Concluído ✓
-                </Badge>
-              ) : (
-                <span className="text-sm font-bold text-primary flex-shrink-0">{pctHoje}%</span>
-              )}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {doneHoje ? (
+                  <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/60 px-2 py-0.5 rounded-full">Concluído</span>
+                ) : (
+                  <span className="text-sm font-bold text-primary">{pctHoje}%</span>
+                )}
+                <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+              </div>
             </div>
-
-            {/* Barra de progresso */}
             {totalEx > 0 && (
               <div>
-                <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
+                <div className="flex justify-between text-[11px] text-muted-foreground mb-1">
                   <span>{doneEx} de {totalEx} exercícios</span>
                   {!doneHoje && <span>Faltam {totalEx - doneEx}</span>}
                 </div>
-                <div className="w-full bg-muted rounded-full h-2">
+                <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
                   <div
-                    className={`h-2 rounded-full transition-all duration-500 ${
-                      doneHoje
-                        ? 'bg-gradient-to-r from-emerald-500 to-emerald-400'
-                        : 'bg-gradient-to-r from-primary to-primary/70'
-                    }`}
-                    style={{ width: `${pctHoje}%` }}
+                    className={`h-1.5 rounded-full transition-all duration-500 ${doneHoje ? 'bg-emerald-500' : 'bg-primary'}`}
+                    style={{ width: `${Math.min(100, pctHoje)}%` }}
                   />
                 </div>
               </div>
             )}
-
-            <Link
-              href="/cliente/treinos"
-              className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-90 ${
-                doneHoje
-                  ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
-                  : 'bg-primary text-primary-foreground'
-              }`}
-            >
-              {doneHoje ? 'Ver treino completo' : 'Ir para o treino de hoje'}
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </CardContent>
-        </Card>
+          </div>
+        </Link>
       ) : null}
 
-      {/* ── Métricas de evolução ──────────────────────────────────────── */}
-      {(gamification || hasActivityToday || totalDietDays > 0 || dietStreak > 0) && (
-        <div className="bg-gradient-to-br from-emerald-50 to-blue-50 dark:from-emerald-950/30 dark:to-blue-950/30 border border-emerald-100 dark:border-emerald-900/50 rounded-2xl p-5 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
-              <TrendingUp className="w-4 h-4 text-primary" />
-              Sua Evolução
-            </h3>
-            <Link
-              href="/cliente/progresso"
-              className="text-xs font-medium text-primary hover:opacity-90 flex items-center gap-1"
-            >
-              Ver detalhes <ArrowRight className="w-3 h-3" />
-            </Link>
-          </div>
-
-          <div className="grid grid-cols-2 gap-3">
-            <div className="bg-white/70 dark:bg-card/60 rounded-xl p-3">
-              <div className="flex items-center gap-1.5 mb-1">
-                <Dumbbell className="w-3.5 h-3.5 text-blue-500" />
-                <span className="text-xs text-muted-foreground">Esta semana</span>
+      {/* ── Cardio de hoje ─────────────────────────────────────────────── */}
+      {!cardioPlan ? (
+        <Link href="/cliente/cardio" className="block group">
+          <div className="rounded-2xl border border-dashed border-border bg-card/50 p-5 flex items-center justify-between hover:border-primary/40 hover:bg-muted/30 transition-all">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center">
+                <Activity className="w-5 h-5 text-muted-foreground/50" />
               </div>
-              <p className="text-2xl font-bold text-foreground">
-                {weeklyTarget > 0 ? `${weeklyComplete}/${weeklyTarget}` : weeklyComplete}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {weeklyTarget > 0 ? `${weeklyPct}% da meta` : weeklyComplete === 1 ? 'treino' : 'treinos'}
-              </p>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Cardio</p>
+                <p className="text-sm font-medium text-muted-foreground">Nenhum plano ativo</p>
+              </div>
             </div>
-
-            <div className="bg-white/70 dark:bg-card/60 rounded-xl p-3">
-              <div className="flex items-center gap-1.5 mb-1">
-                <Target className="w-3.5 h-3.5 text-emerald-500" />
-                <span className="text-xs text-muted-foreground">No mês</span>
-              </div>
-              <p className="text-2xl font-bold text-foreground">{monthAdherence}%</p>
-              <p className="text-xs text-muted-foreground">de adesão</p>
-            </div>
+            <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
           </div>
-
-          <div className="flex items-center gap-4 flex-wrap">
-            {streak > 0 && (
-              <div className="flex items-center gap-1.5">
-                <Flame className="w-4 h-4 text-orange-500" />
-                <span className="text-xs font-semibold text-foreground">
-                  {streak} {streak === 1 ? 'dia seguido' : 'dias seguidos'} treino
-                </span>
-              </div>
-            )}
-            {dietStreak > 0 && (
-              <div className="flex items-center gap-1.5">
-                <Utensils className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span className="text-xs font-semibold text-foreground">
-                  {dietStreak} {dietStreak === 1 ? 'dia seguido' : 'dias seguidos'} dieta
-                </span>
-              </div>
-            )}
-            {totalXP > 0 && (
-              <div className="flex items-center gap-1.5">
-                <Zap className="w-4 h-4 text-amber-500" />
-                <span className="text-xs font-semibold text-foreground">
-                  {totalXP} XP · Nível {level}
-                </span>
-              </div>
-            )}
-            {gamification?.total_sessions > 0 && (
-              <div className="flex items-center gap-1.5">
-                <Trophy className="w-4 h-4 text-amber-500" />
-                <span className="text-xs font-semibold text-foreground">
-                  {gamification.total_sessions}{' '}
-                  {gamification.total_sessions === 1 ? 'sessão' : 'sessões'} treino
-                </span>
-              </div>
-            )}
-            {totalDietDays > 0 && (
-              <div className="flex items-center gap-1.5">
-                <Trophy className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                <span className="text-xs font-semibold text-foreground">
-                  {totalDietDays} {totalDietDays === 1 ? 'dia' : 'dias'} dieta cumpridos
-                </span>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* ── Cardio hoje (mesmo layout do Treino de hoje) ─────────────────── */}
-      {cardioPlan && (
-        <Card className={cardioSessionToday?.is_complete
-          ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20'
-          : 'border-primary/20 bg-primary/5'
-        }>
-          <CardContent className="p-5 space-y-4">
-            <div className="flex items-center justify-between gap-3">
+        </Link>
+      ) : (
+        <Link href="/cliente/cardio" className="block group">
+          <div className={`rounded-2xl border p-5 transition-all ${
+            cardioSessionToday?.is_complete
+              ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20'
+              : 'border-primary/20 bg-card hover:border-primary/40'
+          }`}>
+            <div className="flex items-center justify-between gap-3 mb-3">
               <div className="flex items-center gap-3 min-w-0">
-                <div className={`w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 ${
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
                   cardioSessionToday?.is_complete
                     ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400'
-                    : 'bg-primary/15 text-primary'
+                    : 'bg-primary/10 text-primary'
                 }`}>
-                  {cardioSessionToday?.is_complete ? (
-                    <CheckCircle2 className="w-6 h-6" />
-                  ) : (
-                    <Activity className="w-6 h-6" />
-                  )}
+                  {cardioSessionToday?.is_complete
+                    ? <CheckCircle2 className="w-5 h-5" />
+                    : <Activity className="w-5 h-5" />
+                  }
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Cardio de hoje
-                  </p>
-                  <p className="text-base font-bold text-foreground line-clamp-2">
-                    {cardioPlan.prescription || 'Sem descrição.'}
-                  </p>
+                  <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Cardio de hoje</p>
+                  <p className="text-sm font-bold text-foreground line-clamp-1">{cardioPlan.prescription || 'Ver prescrição'}</p>
                 </div>
               </div>
-              {cardioSessionToday?.is_complete ? (
-                <Badge className="bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border-0 flex-shrink-0">
-                  Concluído ✓
-                </Badge>
-              ) : (
-                <span className="text-sm font-bold text-primary flex-shrink-0">0%</span>
-              )}
-            </div>
-
-            {/* Barra de progresso (igual ao treino: 0 de 1 / 1 de 1) */}
-            <div>
-              <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
-                <span>
-                  {cardioSessionToday?.is_complete ? '1 de 1 atividade' : '0 de 1 atividade'}
-                </span>
-                {!cardioSessionToday?.is_complete && <span>Falta 1</span>}
-              </div>
-              <div className="w-full bg-muted rounded-full h-2">
-                <div
-                  className={`h-2 rounded-full transition-all duration-500 ${
-                    cardioSessionToday?.is_complete
-                      ? 'bg-gradient-to-r from-emerald-500 to-emerald-400'
-                      : 'bg-gradient-to-r from-primary to-primary/70'
-                  }`}
-                  style={{ width: cardioSessionToday?.is_complete ? '100%' : '0%' }}
-                />
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {cardioSessionToday?.is_complete ? (
+                  <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/60 px-2 py-0.5 rounded-full">Concluído</span>
+                ) : (
+                  <span className="text-sm font-bold text-primary">0%</span>
+                )}
+                <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
               </div>
             </div>
-
-            <Link
-              href="/cliente/cardio"
-              className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-90 ${
-                cardioSessionToday?.is_complete
-                  ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
-                  : 'bg-primary text-primary-foreground'
-              }`}
-            >
-              {cardioSessionToday?.is_complete ? 'Ver cardio completo' : 'Ir para o cardio de hoje'}
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </CardContent>
-        </Card>
+            <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+              <div
+                className={`h-1.5 rounded-full transition-all duration-500 ${cardioSessionToday?.is_complete ? 'bg-emerald-500' : 'bg-primary'}`}
+                style={{ width: cardioSessionToday?.is_complete ? '100%' : '0%' }}
+              />
+            </div>
+          </div>
+        </Link>
       )}
 
-      {/* ── Dieta de hoje (mesmo layout do Treino e Cardio) ───────────────── */}
-      {dietas.length > 0 && (
-        <Card className={dietHojeDone
-          ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/40 dark:bg-emerald-950/20'
-          : 'border-primary/20 bg-primary/5'
-        }>
-          <CardContent className="p-5 space-y-4">
-            <div className="flex items-center justify-between gap-3">
+      {/* ── Dieta de hoje ─────────────────────────────────────────────── */}
+      {dietas.length === 0 ? (
+        <Link href="/cliente/dietas" className="block group">
+          <div className="rounded-2xl border border-dashed border-border bg-card/50 p-5 flex items-center justify-between hover:border-primary/40 hover:bg-muted/30 transition-all">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-muted flex items-center justify-center">
+                <Utensils className="w-5 h-5 text-muted-foreground/50" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Dieta</p>
+                <p className="text-sm font-medium text-muted-foreground">Nenhum plano ativo</p>
+              </div>
+            </div>
+            <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
+          </div>
+        </Link>
+      ) : (
+        <Link href="/cliente/dietas" className="block group">
+          <div className={`rounded-2xl border p-5 transition-all ${
+            dietHojeDone
+              ? 'border-emerald-200 dark:border-emerald-800 bg-emerald-50/50 dark:bg-emerald-950/20'
+              : 'border-primary/20 bg-card hover:border-primary/40'
+          }`}>
+            <div className="flex items-center justify-between gap-3 mb-3">
               <div className="flex items-center gap-3 min-w-0">
-                <div className={`w-11 h-11 rounded-full flex items-center justify-center flex-shrink-0 ${
+                <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
                   dietHojeDone
                     ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-600 dark:text-emerald-400'
-                    : 'bg-primary/15 text-primary'
+                    : 'bg-primary/10 text-primary'
                 }`}>
-                  {dietHojeDone ? (
-                    <CheckCircle2 className="w-6 h-6" />
-                  ) : (
-                    <Utensils className="w-6 h-6" />
-                  )}
+                  {dietHojeDone ? <CheckCircle2 className="w-5 h-5" /> : <Utensils className="w-5 h-5" />}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
-                    Dieta de hoje
-                  </p>
-                  <p className="text-base font-bold text-foreground truncate">
-                    {dietas[0]?.name ?? 'Minha Dieta'}
-                  </p>
+                  <p className="text-xs font-semibold uppercase tracking-widest text-muted-foreground">Dieta de hoje</p>
+                  <p className="text-sm font-bold text-foreground truncate">{dietas[0]?.name ?? 'Minha Dieta'}</p>
                 </div>
               </div>
-              {dietHojeDone ? (
-                <Badge className="bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300 border-0 flex-shrink-0">
-                  Concluído ✓
-                </Badge>
-              ) : (
-                <span className="text-sm font-bold text-primary flex-shrink-0">
-                  {dietMealsTotal > 0 ? `${dietPctHoje}%` : '0%'}
-                </span>
-              )}
-            </div>
-
-            {/* Barra de progresso (igual ao treino/cardio) */}
-            <div>
-              <div className="flex justify-between text-xs text-muted-foreground mb-1.5">
-                <span>
-                  {dietMealsTotal > 0
-                    ? `${dietMealsDone} de ${dietMealsTotal} refeições`
-                    : '0 de 0 refeições'}
-                </span>
-                {!dietHojeDone && dietMealsTotal > 0 && (
-                  <span>Faltam {dietMealsTotal - dietMealsDone}</span>
+              <div className="flex items-center gap-2 flex-shrink-0">
+                {dietHojeDone ? (
+                  <span className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 bg-emerald-100 dark:bg-emerald-900/60 px-2 py-0.5 rounded-full">Concluído</span>
+                ) : (
+                  <span className="text-sm font-bold text-primary">{dietMealsTotal > 0 ? `${dietPctHoje}%` : '—'}</span>
                 )}
-              </div>
-              <div className="w-full bg-muted rounded-full h-2">
-                <div
-                  className={`h-2 rounded-full transition-all duration-500 ${
-                    dietHojeDone
-                      ? 'bg-gradient-to-r from-emerald-500 to-emerald-400'
-                      : 'bg-gradient-to-r from-primary to-primary/70'
-                  }`}
-                  style={{ width: `${dietMealsTotal > 0 ? (dietHojeDone ? 100 : dietPctHoje) : 0}%` }}
-                />
+                <ArrowRight className="w-4 h-4 text-muted-foreground group-hover:text-primary transition-colors" />
               </div>
             </div>
-
-            <Link
-              href="/cliente/dietas"
-              className={`flex items-center justify-center gap-2 w-full py-2.5 rounded-xl text-sm font-semibold transition-opacity hover:opacity-90 ${
-                dietHojeDone
-                  ? 'bg-emerald-100 dark:bg-emerald-900/60 text-emerald-700 dark:text-emerald-300'
-                  : 'bg-primary text-primary-foreground'
-              }`}
-            >
-              {dietHojeDone ? 'Ver dieta completa' : 'Ir para a dieta de hoje'}
-              <ArrowRight className="w-4 h-4" />
-            </Link>
-          </CardContent>
-        </Card>
+            {dietMealsTotal > 0 && (
+              <div>
+                <div className="flex justify-between text-[11px] text-muted-foreground mb-1">
+                  <span>{dietMealsDone} de {dietMealsTotal} refeições</span>
+                  {!dietHojeDone && <span>Faltam {dietMealsTotal - dietMealsDone}</span>}
+                </div>
+                <div className="w-full bg-muted rounded-full h-1.5 overflow-hidden">
+                  <div
+                    className={`h-1.5 rounded-full transition-all duration-500 ${dietHojeDone ? 'bg-emerald-500' : 'bg-primary'}`}
+                    style={{ width: `${Math.min(100, dietHojeDone ? 100 : dietPctHoje)}%` }}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+        </Link>
       )}
 
     </div>

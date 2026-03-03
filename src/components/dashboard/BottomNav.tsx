@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { cn } from '@/lib/utils'
+import { useProfile } from '@/hooks/useProfile'
 import {
   LayoutDashboard,
   Utensils,
@@ -27,7 +28,9 @@ const CLIENT_NAV_ONBOARDING = [
 
 export function BottomNav({ onboardingComplete = true }: { onboardingComplete?: boolean }) {
   const pathname = usePathname()
-  const navItems = onboardingComplete ? CLIENT_NAV_FULL : CLIENT_NAV_ONBOARDING
+  const { profile } = useProfile()
+  const isComplete = onboardingComplete || profile?.onboarding_completed === true
+  const navItems = isComplete ? CLIENT_NAV_FULL : CLIENT_NAV_ONBOARDING
 
   return (
     <nav
